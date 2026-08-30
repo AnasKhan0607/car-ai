@@ -1,142 +1,225 @@
 # Car AI
 
-An on-device diagnostic assistant for cars. Ask your car a question in plain
-English — *"is my engine running hot?"* — and a local LLM reads the relevant
-OBD-II sensor and answers like a mechanic explaining it to a normal person.
+An on-device diagnostic dashboard for cars. It polls your car's OBD-II port
+every few seconds, shows the readings on a screen you can glance at while
+driving, warns you when something goes out of range, and lets you ask it
+questions in plain English — *"is my engine running hot?"* — which a local LLM
+answers by reading the actual sensors.
 
-No cloud — the model, the tools, and the logic all run locally on the device.
+No cloud. The model, the tools, and the logic all run on the device.
 
 ---
 
 ## Status — read this first
 
-**Designed for a Raspberry Pi 5 (16GB). This repository runs against simulated
-OBD-II data, not a live vehicle.**
+**Designed for a Raspberry Pi 5 (16GB) with an ELM327 USB adapter.**
 
 | Component | State |
 |---|---|
-| Six OBD-II reader tools + dispatcher, each with a JSON schema | ✅ Verified by self-test |
-| Tools return value + unit + context (not bare numbers) | ✅ Verified by self-test |
+| Sensor catalogue, alert thresholds, tool schemas | ✅ Verified by self-test |
+| Alerting: thresholds, debounce, new-DTC detection | ✅ Verified by self-test |
 | Graceful recovery from hallucinated tool names | ✅ Verified by self-test |
-| Simulated OBD-II data source (`MOCK_OBD`) | ✅ Working |
-| Full LLM chat loop — end-to-end tool calling with `llama3.2:3b` | ⚠️ Code complete; not yet run end-to-end |
-| Live OBD-II reads (ELM327 adapter + python-OBD) | ⛔ Not started |
-| In-car screen + 3D-printed enclosure | ⛔ Not started |
-| Validated on-vehicle / on-Pi performance | ⛔ Not yet verified |
+| Simulated vehicle with fault scenarios (`--mock`) | ✅ Verified end-to-end |
+| Dashboard rendering, live refresh, alert states | ✅ Verified in a browser |
+| HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
+| Drive logging to CSV | ✅ Working |
+| Full LLM chat loop against Ollama | ⚠️ Code complete; **not yet run end-to-end** |
+| Live OBD-II reads from a real vehicle | ⚠️ Code complete; **not yet run against a car** |
+| Kiosk mode on the Pi's display | ⚠️ Written; not yet verified on hardware |
+| Layout on a small (800×480) in-car screen | ⚠️ CSS written; not yet verified on hardware |
 
-**"Verified by self-test"** means exercised by `python car_ai.py --selftest`,
-which runs the tool layer with no model attached. The full chat loop is written
-but has **not yet been run end-to-end** against a live Ollama server, and
-nothing has been validated on the Pi or in a vehicle yet.
-
-This is a working local-AI **tool layer** with a complete-but-unverified LLM
-loop, running on **simulated** vehicle input. It is not a finished in-car
-product, and this README does not pretend otherwise.
+Everything marked ✅ was exercised against the simulator and a running server.
+Nothing has yet been validated **in a vehicle**, and the LLM loop has not been
+run against a live Ollama server. Treat the ⚠️ rows as unproven.
 
 ---
 
-## Why local, not cloud
+## The rule that shapes this codebase
 
-- Cars lose signal in tunnels, garages, and rural roads — exactly where you
-  most need to know whether a noise or a warning light matters.
-- Paying a cloud API call to be told your coolant is fine is absurd.
-- Vehicle telemetry is effectively location data; it shouldn't leave the car.
+**Live data and simulated data are never mixed.**
 
-Every technical decision below follows from that constraint.
+An earlier version fell back to a hardcoded number whenever a live sensor read
+failed, with nothing in the output to say so. Sitting in a house with no
+adapter plugged in, it would report *"you are currently travelling at 72 km/h"*
+in a confident, complete sentence.
+
+That is worse than not running. So:
+
+- Simulated data requires an explicit `--mock` flag.
+- In live mode a failed read is reported as a failed read — on the dashboard,
+  in the API, and to the model, which is instructed never to estimate.
+- A sensor the car does not implement is detected once at connect time and
+  shown permanently as *"not supported by this car"*, not as an intermittent
+  fault.
+- Everything simulated is labelled `simulated data` in the UI and in the
+  model's own system prompt.
+
+### On BMW and fuel level
+
+Fuel level (PID `012F`) is **optional** in the OBD-II spec, and BMW generally
+does not expose it. On a BMW you should expect the fuel tile to read
+`n/s — not supported by this car`, permanently. That is the car, not a bug.
+The `--mock` simulator reproduces this deliberately, so the unsupported-sensor
+path is exercised during development.
 
 ---
 
 ## How it works
 
-1. You ask a question. It goes to `llama3.2:3b` running under Ollama, together
-   with the list of tool schemas (the six readers).
-2. Instead of guessing a number, the model emits a **tool call** — e.g.
-   `get_coolant_temp()`.
-3. The dispatcher runs that Python function, which reads the (currently
-   simulated) sensor and returns a dict with the **value, its unit, and
-   context**.
-4. That result is appended to the conversation and sent back to the model.
-5. The model may call more tools, or — once it has what it needs — answer in
-   plain language.
+```
+        ELM327 (USB)
+             │
+    ┌────────▼─────────┐   one thread owns the serial port
+    │  polling thread  │   queries the car every 5s
+    └────────┬─────────┘
+             │ publishes an immutable snapshot
+     ┌───────┴────────┬──────────────────┐
+     ▼                ▼                  ▼
+  dashboard        monitor          LLM tools
+  (browser)     alerts + CSV     (llama3.2:3b)
+```
 
-Two deliberate design choices make a small model reliable here:
+**One thread owns the connection.** An ELM327 serves one request at a time and
+one client at a time. A single poller holds the port and publishes a snapshot;
+the dashboard and the model both read that snapshot and never touch the serial
+port. Two consequences: the two halves of the app cannot fight over the
+adapter, and an LLM question never waits on serial I/O.
 
-- **Tools return dicts with units and context, not bare numbers.** A 3B model
-  handed the integer `91` will confidently guess what it means. Handed
-  `{"value": 91, "unit": "°C", "context": "normal is ~90-104 °C"}`, it stays
-  grounded.
-- **The dispatcher never throws.** Small local models sometimes hallucinate a
-  tool name. The dispatcher returns a structured error listing the real tools,
-  so the model recovers on its next turn instead of crashing the loop.
+**Tools read the snapshot, not the car.** A tool call is instant. The trade-off
+— a reading can be up to one poll interval old — is made visible: every result
+carries its age, and stale readings say so.
 
-### The six tools
+**Poll tiers.** Each PID costs roughly 50–100 ms on an ELM327, so polling
+everything every cycle would make the dashboard sluggish for no benefit. Speed,
+rpm, coolant and load refresh every cycle; slower-moving values every third;
+fault codes every sixth.
 
-| Tool | Reads |
-|---|---|
-| `get_speed` | road speed (km/h) |
-| `get_rpm` | engine speed (rpm) |
-| `get_coolant_temp` | coolant temperature (°C) |
-| `get_fuel_level` | fuel remaining (%) |
-| `get_engine_load` | calculated engine load (%) |
-| `get_fault_codes` | stored diagnostic trouble codes (DTCs) |
+### Why the tools return dicts
 
-### The simulator seam
+Every tool result carries the value, its unit, and its normal range:
 
-Every tool reads through one dict, `MOCK_OBD`. Swapping in live python-OBD
-reads is a contained change inside those six functions — nothing above them
-moves. That is why the AI layer was built against a simulator first instead of
-blocking on hardware.
+```json
+{"value": 98, "unit": "°C", "status": "ok",
+ "normal_range": "60-105 °C",
+ "context": "Engine coolant temperature. Normal operating range is ~90-104 C.
+             Above ~110 C is a genuine overheating risk..."}
+```
+
+Hand a 3B model the bare integer `98` and it will confidently invent what that
+means. Grounded like this, it doesn't have to.
+
+The same applies to fault codes: python-OBD's own description for each DTC is
+passed through and marked authoritative, because a 3B model asked to explain
+`P0128` from memory will produce something fluent and wrong.
 
 ---
 
 ## Running it
 
-### Tool layer only — no model, no dependencies
+### No car, no adapter, no model
 
 ```bash
-python car_ai.py --selftest
+python app.py --selftest
 ```
 
-Exercises all six tools and the hallucinated-tool-name recovery path. Runs
-anywhere Python runs.
+Exercises every tool, the alert engine, and the hallucinated-tool-name recovery
+path. Needs nothing installed beyond the standard library.
 
-### Full assistant
-
-Requires Ollama serving `llama3.2:3b` locally.
+### Simulated car, full dashboard
 
 ```bash
 python -m venv car_ai_env
-source car_ai_env/bin/activate        # Windows: car_ai_env\Scripts\activate
+source car_ai_env/bin/activate
 pip install -r requirements.txt
 
-ollama pull llama3.2:3b               # ~2 GB
-python car_ai.py
+python app.py --mock                        # healthy car
+python app.py --mock --scenario overheat    # coolant climbing into the red
 ```
 
-Then ask things like *"is my engine running hot?"* or *"do I have any fault
-codes?"*
+Open <http://localhost:5000>. Scenarios: `normal`, `overheat`, `low_fuel`,
+`misfire`, `charging_fault` — they exist so the alerting and the assistant's
+judgement can be tested, which is the part you cannot test on a healthy car.
+
+### Real car
+
+```bash
+ollama pull llama3.2:3b          # ~2 GB, once
+python app.py                    # autoscans for the adapter
+python app.py --serial-port /dev/ttyUSB0   # or name it explicitly
+```
+
+### Fullscreen on the Pi's screen
+
+```bash
+./scripts/kiosk.sh               # from the Pi's desktop session, not SSH
+```
+
+To start on boot, see `scripts/car-ai.service` (server) and add
+`scripts/kiosk.sh` to the desktop autostart (browser).
 
 ---
 
-## Why `llama3.2:3b` (Q4_K_M)
+## Alerts and logging
 
-The Pi 5 has no usable GPU, so the model search was limited to small quantized
-models that support function calling. `llama3.2:3b` at Q4_K_M is ~2.0 GB and is
-one of the smallest that does. Whether it calls these six tools reliably enough
-in practice is exactly what the end-to-end verification (see Status) still needs
-to confirm. This was a hardware-constraint problem, not an ML problem.
+The monitor runs off the same 5-second poll and watches on its own — the thing
+a question-and-answer chatbot fundamentally cannot do, since coolant creeping
+up over ten minutes is exactly what a driver will not think to ask about.
+
+- Readings are checked against the ranges in `car_ai/sensors.py`.
+- Alerts are **debounced**: a value must stay out of range for two consecutive
+  cycles. ELM327 adapters return the occasional garbage sample, and a dashboard
+  that cries wolf gets ignored at the moment it matters.
+- A **new** fault code alerts immediately — the ECU has already debounced it.
+- Losing the adapter is itself an alert, so a dropped connection never looks
+  like a screen full of healthy frozen numbers.
+- Every cycle is appended to `~/car_ai_logs/drive_<timestamp>.csv`.
+
+---
+
+## Troubleshooting
+
+**`No OBD-II adapter responding`** — check, in order: `lsusb` (does it
+enumerate), `ls /dev/ttyUSB*` (did it get a device), `groups` (are you in
+`dialout`; if not, `sudo usermod -aG dialout $USER` and log in again). The
+adapter must be plugged into the car with the ignition on — most ELM327s are
+powered by the car, not by USB.
+
+**Speed and RPM read `--`** — the engine is not running. Those PIDs return
+nothing with the ignition merely in accessory.
+
+**`Could not reach the model`** — `systemctl status ollama`, and
+`ollama list` to confirm `llama3.2:3b` is pulled.
+
+**Answers get worse in a long conversation** — shouldn't happen: history is
+trimmed to fit the 4096-token window with the system prompt pinned outside it.
+If it does, `clear` in the chat panel starts fresh.
+
+---
+
+## Layout
+
+```
+app.py                  entry point, CLI, self-test
+car_ai/sensors.py       the sensor catalogue — one source of truth
+car_ai/source.py        connection + polling thread; live and mock sources
+car_ai/monitor.py       alert evaluation and CSV drive logging
+car_ai/tools.py         tool schemas and dispatcher for the LLM
+car_ai/assistant.py     the Ollama chat loop
+car_ai/server.py        Flask routes
+car_ai/templates/, static/    the dashboard
+```
+
+Adding a sensor is a single entry in `car_ai/sensors.py`: the poller, the
+dashboard, the alert thresholds and the LLM tool schemas all derive from it.
 
 ---
 
 ## Roadmap
 
-- [ ] Run the full chat loop end-to-end against Ollama and confirm the model
-      calls the six tools reliably
-- [ ] Live OBD-II reads via an ELM327 adapter (python-OBD), behind the same six
-      functions
-- [ ] Verify end-to-end operation on the Pi 5 and measure latency under real
-      driving conditions
-- [ ] In-car screen
+- [ ] Run the LLM loop end-to-end against Ollama on the Pi
+- [ ] Verify live reads against the vehicle; confirm which PIDs it answers
+- [ ] Measure poll latency and dashboard responsiveness while driving
+- [ ] Verify the kiosk display on the in-car screen
 - [ ] 3D-printed enclosure
 
 ---
@@ -144,7 +227,6 @@ to confirm. This was a hardware-constraint problem, not an ML problem.
 ## Team
 
 - **Ibrahim Qureshi** — AI & software layer: Ollama setup, model selection and
-  testing, tool-call design, and Pi environment setup (Ollama, model,
-  virtualenv, SSH).
+  testing, tool-call design, OBD integration, and Pi environment setup.
 - Collaborator — hardware integration and the in-car screen.
 - Collaborator — CAD and the 3D-printed enclosure.

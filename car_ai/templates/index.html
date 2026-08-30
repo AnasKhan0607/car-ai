@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e13">
+<title>Car AI</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">CAR<span>AI</span></div>
+  <div id="mode-pill" class="pill pill--idle">connecting…</div>
+  <div class="topbar-spacer"></div>
+  <div id="poll-info" class="meta">polling every {{ interval|int }}s</div>
+  <div id="clock" class="clock">--:--</div>
+  <button id="chat-toggle" class="chat-toggle" aria-label="Toggle chat">💬</button>
+</header>
+
+<div id="alerts" class="alerts" hidden></div>
+
+<main class="layout">
+
+  <section class="dash" aria-label="Live vehicle data">
+
+    <div class="tiles tiles--primary">
+      {% for s in primary %}
+      <article class="tile" data-key="{{ s.key }}">
+        <div class="tile-label">{{ s.label }}</div>
+        <div class="tile-value"><span class="num">--</span><span class="unit">{{ s.unit }}</span></div>
+        <div class="tile-note"></div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Fault codes</h2>
+        <span id="mil-badge" class="badge" hidden>CHECK ENGINE</span>
+      </div>
+      <div id="dtc-body" class="dtc-body">Reading…</div>
+    </div>
+
+    <details class="panel panel--collapsible" open>
+      <summary><h2>All sensors</h2></summary>
+      <div class="tiles tiles--secondary">
+        {% for s in secondary %}
+        <article class="tile tile--small" data-key="{{ s.key }}">
+          <div class="tile-label">{{ s.label }}</div>
+          <div class="tile-value"><span class="num">--</span><span class="unit">{{ s.unit }}</span></div>
+        </article>
+        {% endfor %}
+      </div>
+    </details>
+
+    <div id="footer-meta" class="footer-meta"></div>
+  </section>
+
+  <section id="chat" class="chat" aria-label="Ask about your car">
+    <div class="chat-head">
+      <h2>Ask about your car</h2>
+      <button id="chat-reset" class="ghost-btn" title="Start a new conversation">clear</button>
+    </div>
+
+    <div id="chat-log" class="chat-log">
+      <div class="msg msg--bot">
+        <p>Ask me anything about the car — “is my engine running hot?”, “do I have
+        any fault codes?”, “how’s everything looking?”</p>
+        <p class="muted">Running <code>{{ model }}</code> locally. Answers can take
+        a few seconds on the Pi.</p>
+      </div>
+    </div>
+
+    <div class="suggestions" id="suggestions">
+      <button>How's everything looking?</button>
+      <button>Is my engine running hot?</button>
+      <button>Do I have any fault codes?</button>
+    </div>
+
+    <form id="chat-form" class="chat-form" autocomplete="off">
+      <input id="chat-input" type="text" placeholder="Ask about your car…"
+             maxlength="2000" aria-label="Your question">
+      <button id="chat-send" type="submit">Ask</button>
+    </form>
+  </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
