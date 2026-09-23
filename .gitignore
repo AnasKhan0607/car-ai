@@ -4,3 +4,4 @@ car_ai_env/
 .venv/
 .DS_Store
 car_ai_logs/
+.claude/settings.local.json

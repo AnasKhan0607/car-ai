@@ -17,20 +17,24 @@ No cloud. The model, the tools, and the logic all run on the device.
 | Component | State |
 |---|---|
 | Sensor catalogue, alert thresholds, tool schemas | ✅ Verified by self-test |
-| Alerting: thresholds, debounce, new-DTC detection | ✅ Verified by self-test |
+| Alerting: thresholds, debounce, warn→crit escalation | ✅ Verified on the Pi |
 | Graceful recovery from hallucinated tool names | ✅ Verified by self-test |
 | Simulated vehicle with fault scenarios (`--mock`) | ✅ Verified end-to-end |
 | Dashboard rendering, live refresh, alert states | ✅ Verified in a browser |
 | HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
-| Drive logging to CSV | ✅ Working |
+| Drive logging to CSV | ✅ Verified on the Pi |
 | Full LLM chat loop against Ollama | ⚠️ Code complete; **not yet run end-to-end** |
 | Live OBD-II reads from a real vehicle | ⚠️ Code complete; **not yet run against a car** |
 | Kiosk mode on the Pi's display | ⚠️ Written; not yet verified on hardware |
 | Layout on a small (800×480) in-car screen | ⚠️ CSS written; not yet verified on hardware |
 
-Everything marked ✅ was exercised against the simulator and a running server.
-Nothing has yet been validated **in a vehicle**, and the LLM loop has not been
-run against a live Ollama server. Treat the ⚠️ rows as unproven.
+Everything marked ✅ was exercised against the simulator and a running server;
+the alert engine and drive logging were additionally confirmed on the Pi itself
+(a simulated overheat crossed the warn threshold, survived debounce, and
+escalated to critical ~80s later).
+
+Nothing has yet been validated **in a vehicle**, and the LLM loop has still not
+been run against a live Ollama server. Treat the ⚠️ rows as unproven.
 
 ---
 
@@ -211,6 +215,11 @@ car_ai/templates/, static/    the dashboard
 
 Adding a sensor is a single entry in `car_ai/sensors.py`: the poller, the
 dashboard, the alert thresholds and the LLM tool schemas all derive from it.
+
+See **[CLAUDE.md](CLAUDE.md)** for working notes — the design invariants, the
+hard-won constraints (why `ollama>=0.5` is pinned, why history is trimmed the
+way it is), and hardware debugging. `.claude/skills/` holds task guides for
+running the app, adding a sensor, and deploying to the Pi.
 
 ---
 
