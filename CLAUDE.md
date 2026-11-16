@@ -3,8 +3,15 @@
 On-device OBD-II dashboard + diagnostic assistant for a Raspberry Pi 5 in a car.
 Polls the vehicle every 5s, renders a glanceable dashboard, alerts on
 out-of-range readings, logs each drive, and answers plain-English questions via
-a local `llama3.2:3b` under Ollama. No cloud, by design — cars lose signal
-exactly where you need the answer, and vehicle telemetry is location data.
+a local `llama3.2:3b` under Ollama.
+
+**Brain decision (2026-11-15):** Claude becomes the main brain (Claude Code
+headless, `claude -p`, on the owner's subscription), with Ollama as the offline
+fallback and a canned reply below that. This replaces the original "no cloud"
+rule with **"must work fully offline"**: cars lose signal exactly where you
+need the answer, so the local path is a first-class path, not a degraded one.
+Claude gets code-written summaries, never the raw telemetry stream. Not built
+yet; it's Phase 2 in `docs/PHASES.md`. Today only the Ollama path exists.
 
 ## The invariant — read before changing anything in `source.py`
 
@@ -109,7 +116,37 @@ promote a row to ✅ without actually running it.** As of the last session:
 - Speed and RPM read `--` with the ignition merely in accessory. Engine must run.
 - Chromium on the Pi spews `gbm_wrapper ... dma_buf` and `DEPRECATED_ENDPOINT`
   errors. All noise; it renders fine.
-- Only one process can hold the adapter. Don't run two instances.
+- Only one process can hold the adapter. Don't run two instances. On boot,
+  `car-ai.service` already holds it: `sudo systemctl stop car-ai` before
+  running `app.py` by hand.
+- Over SSH, `pkill -f <pattern>` matches the SSH command's own shell and kills
+  the session. Use `pkill -f "[a]pp.py"` or `pkill -x chromium`.
+- Touch dead but picture fine on the 7" display → the thin ribbon from the
+  touch glass to the driver board is loose (`edt_ft5x06 ... error: -121`).
+  Don't `modprobe -r edt_ft5x06`; it shares the display's power controller
+  and blanked the screen.
+
+## Workflow
+
+- Plan: `docs/PHASES.md`. Each task is an issue on the fork
+  **`AnasKhan0607/car-ai`** (always pass `--repo AnasKhan0607/car-ai` to `gh`:
+  in a fork it can default to the read-only upstream `iqureshi123/car-ai`).
+- Branch `issue-N-slug` off `origin/main`, conventional commits referencing
+  `#N`, PR into `main` with `Closes #N`. Commit as you go.
+- `/doc-check` before `gh pr create`. A hook in `.claude/settings.json` blocks
+  PRs that change code without touching docs.
+- CI (`.github/workflows/ci.yml`) runs `--selftest` with **no** third-party
+  packages installed, so keep the self-test dependency-free.
+
+| Skill / agent | Use for |
+|---|---|
+| `project-management` | Issues, branches, PRs, status-table rules |
+| `car-ai-feature` | Building anything beyond a sensor; layers and invariants |
+| `add-sensor` | A new OBD value: one `sensors.py` entry |
+| `car-ai-run` | Running and screenshotting the app |
+| `deploy-to-pi` | Getting code onto the Pi and restarting it |
+| `doc-check` | Pre-PR doc review |
+| `project-manager` agent | Planning phases into issues, "what's next" |
 
 ## Conventions
 

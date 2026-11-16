@@ -7,12 +7,14 @@ description: Get code changes from a dev machine onto the Raspberry Pi running C
 
 ## The setup
 
-- Pi: `master@pi5.local` (`hostname -I` for the IP). **Password auth** — key
-  auth is not set up, so an automated `ssh`/`scp` from a non-interactive shell
-  will fail with `Permission denied (publickey,password)`. Either run the
-  command in an interactive terminal, or set up keys once:
-  `ssh-copy-id master@pi5.local`.
-- Repo on the Pi: `~/car-ai`, cloned from `AnasKhan0607/car-ai`.
+- Pi: `ssh pi5.local` (user `master`). Key auth via `~/.ssh/pi5_ed25519`,
+  configured in the dev Mac's `~/.ssh/config`, so non-interactive `ssh` works.
+  Passwordless `sudo` on the Pi.
+- On the owner's iPhone hotspot the network is **IPv6-only**: `pi5.local`
+  resolves to an IPv6 address only. `scp` has been seen to hang there; pipe
+  files over `ssh` instead (`tar cf - files | ssh pi5.local 'cd ~/car-ai &&
+  tar xf -'`). Always pass `-n` to `ssh` when not piping stdin.
+- Code on the Pi: `~/car-ai` (a plain copy, not a git checkout; see below).
 - venv on the Pi: `~/car_ai_env`.
 - Ollama runs as a systemd service on the Pi with `llama3.2:3b` pulled.
 
@@ -58,14 +60,22 @@ python app.py --mock            # then check http://pi5.local:5000
 For a live test the adapter must be plugged into the car with the ignition on.
 If it isn't detected: `lsusb`, `ls /dev/ttyUSB*`, `groups` (needs `dialout`).
 
-## Running it persistently
+## It's already running: restart, don't start
 
-Over SSH the process dies with the session. Use tmux:
+The Pi boots into `car-ai.service` (server, live, owns the adapter) plus a
+desktop autostart (`scripts/car-ai-dashboard.desktop` → `kiosk-browser.sh`)
+that opens Chromium fullscreen. After deploying:
 
 ```bash
-tmux new -s car          # then run app.py inside
-tmux attach -t car       # reattach later
+sudo systemctl restart car-ai           # pick up new code
+journalctl -u car-ai -n 30 --no-pager   # check it connected
+pkill -x chromium                       # leave kiosk (no keyboard on the Pi)
 ```
 
-For start-on-boot see `scripts/car-ai.service` (server only — a system service
-has no display, so kiosk goes in the desktop autostart instead).
+To run `app.py` by hand (e.g. `--mock`), `sudo systemctl stop car-ai` first:
+two instances fight over the adapter. Changing `scripts/car-ai.service`
+needs `sudo cp` to `/etc/systemd/system/` and `daemon-reload`.
+
+Note: `~/car-ai` on the Pi is **not a git checkout** (it was unpacked from a
+tarball), so the "through git" path above needs a fresh clone first. Until
+then, use the tar-over-ssh path.

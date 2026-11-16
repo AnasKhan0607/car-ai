@@ -245,6 +245,9 @@ running the app, adding a sensor, and deploying to the Pi.
 
 ## Roadmap
 
+The full phased plan (Claude brain, power safety, voice, trips, ENET) is in
+[`docs/PHASES.md`](docs/PHASES.md); work is tracked as issues on this repo.
+
 - [ ] Run the LLM loop end-to-end against Ollama on the Pi
 - [x] Verify live reads against the vehicle; confirm which PIDs it answers
 - [ ] Measure poll latency and dashboard responsiveness while driving
