@@ -23,6 +23,7 @@ import sys
 import time
 
 from car_ai.assistant import DEFAULT_MODEL, Assistant
+from car_ai.brain import ClaudeBrain, find_claude
 from car_ai.monitor import Monitor
 from car_ai.sensors import (GENERIC_SENSORS, VEHICLE_PROFILE, VEHICLE_PROFILES,
                              apply_profile)
@@ -64,6 +65,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     ai = p.add_argument_group("assistant")
     ai.add_argument("--model", default=DEFAULT_MODEL,
                     help=f"Ollama model to use (default: {DEFAULT_MODEL}).")
+    ai.add_argument("--no-claude", action="store_true",
+                    help="Don't try Claude first; answer with the local model "
+                         "only. Claude is used when the `claude` CLI is "
+                         "installed and logged in.")
 
     p.add_argument("--no-log", action="store_true",
                    help="Do not write a CSV drive log.")
@@ -183,6 +188,44 @@ def self_test() -> int:
     everything = dispatch(registry, "get_all_readings")
     assert everything["fault_codes"] and everything["active_alerts"], everything
     print("  Invented-number check and fallback summary: ok")
+
+    # Brain order: Claude, then the local model, then a readings summary.
+    # Fake `claude` executables stand in for the real CLI, and the local model
+    # is absent here (CI installs nothing), so a Claude failure must land on
+    # the code-written summary rather than an error.
+    import os
+    import stat
+    import tempfile
+    from car_ai.brain import classify_failure
+    with tempfile.TemporaryDirectory() as tmp:
+        def fake_claude(name: str, payload: dict, code: int = 0) -> ClaudeBrain:
+            path = os.path.join(tmp, name)
+            with open(path, "w") as f:
+                f.write(f"#!{sys.executable}\nimport json, sys\n"
+                        f"print(json.dumps({payload!r}))\nsys.exit({code})\n")
+            os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC)
+            return ClaudeBrain(path, workdir=__import__("pathlib").Path(tmp))
+        coolant = dispatch(registry, "get_coolant_temp")["value"]
+        ok = Assistant(source, claude=fake_claude("ok", {
+            "type": "result", "is_error": False,
+            "result": f"Coolant is {coolant} °C. Pull over and let it cool."}))
+        r = ok.ask("coolant?")
+        assert r["brain"] == "claude" and str(coolant) in r["answer"], r
+        assert r["answer"].startswith("(Simulated data"), r["answer"]
+        made_up = Assistant(source, claude=fake_claude("made_up", {
+            "type": "result", "is_error": False, "result": "Speed is 999 km/h."}))
+        r = made_up.ask("speed?")
+        assert r["brain"] == "claude" and "999" not in r["answer"], r
+        logged_out = fake_claude("logged_out", {
+            "type": "result", "is_error": True,
+            "result": "Not logged in · Please run /login"}, code=1)
+        # A model name no Ollama has, so this never waits on a real model.
+        r = Assistant(source, model="selftest-no-such-model",
+                      claude=logged_out).ask("how is the car?")
+        assert r["brain"] in ("ollama", "none") and r["answer"], r
+        assert logged_out.last_failure == "auth" and not logged_out.available
+    assert classify_failure({"result": "Claude usage limit reached"}) == "limit"
+    print("  Brain fallback (Claude -> local -> summary) with fake CLIs: ok")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
 
@@ -224,7 +267,9 @@ def main(argv=None) -> int:
     source.monitor = monitor
     source.add_listener(monitor.on_snapshot)
 
-    assistant = Assistant(source, model=args.model)
+    claude_bin = None if args.no_claude else find_claude()
+    assistant = Assistant(source, model=args.model,
+                          claude=ClaudeBrain(claude_bin) if claude_bin else None)
 
     from car_ai.server import create_app
     app = create_app(source, monitor, assistant)
@@ -238,7 +283,7 @@ def main(argv=None) -> int:
     print(f"  data source : {'SIMULATED (' + args.scenario + ')' if args.mock else 'live vehicle via ELM327'}")
     print(f"  vehicle     : {VEHICLE_PROFILE or 'generic thresholds'}")
     print(f"  poll every  : {args.interval:g}s")
-    print(f"  model       : {args.model}")
+    print(f"  answers by  : {'Claude, then ' if claude_bin else ''}{args.model} (local)")
     if monitor.log_path:
         print(f"  drive log   : {monitor.log_path}")
     print(f"  dashboard   : {url}")

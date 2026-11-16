@@ -42,7 +42,7 @@ for reset, q in QUESTIONS:
     dt = time.time() - t
     print("\n" + "=" * 70)
     print(f"Q: {q}   [{dt:.1f}s{'' if reset else ', follow-up'}]")
-    print("tools:", [c["tool"] for c in r.get("tool_calls", [])])
+    print("brain:", r.get("brain"), "| tools:", [c["tool"] for c in r.get("tool_calls", [])])
     if r.get("error"): print("ERROR:", r["error"])
     print("A:", r.get("answer"))
     if r.get("replaced_invented_numbers"): print("REPLACED (invented):", r["replaced_invented_numbers"])

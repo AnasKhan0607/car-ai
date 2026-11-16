@@ -185,6 +185,7 @@ h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .09em;
   border: 1px solid rgba(56,189,248,.25); border-radius: 999px; padding: 2px 8px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+.trace .via { font-weight: 600; }
 .thinking span {
   display: inline-block; width: 6px; height: 6px; margin-right: 4px;
   background: var(--muted); border-radius: 50%; animation: blink 1.3s infinite;

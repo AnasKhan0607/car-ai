@@ -62,9 +62,15 @@ python app.py --mock          # or: python app.py   (live, adapter attached)
 Reachable from any machine on the LAN at `http://pi5.local:5000` — it binds
 `0.0.0.0` by default.
 
-**The chat only works on the Pi**, where Ollama runs. On a dev machine without
-Ollama the dashboard is fully functional and `/api/chat` returns a clean
-"could not reach the model" error. That is expected, not a bug.
+**The chat answers from Claude if the `claude` CLI is installed and logged in,
+otherwise from Ollama** (on the Pi), otherwise with a code-written readings
+summary marked "readings only, no AI". On a dev machine with neither, that
+summary is the expected answer, not a bug. `--no-claude` skips Claude.
+
+To test a second instance next to the live service, use `--mock --http-port
+5001 --no-log`, start it with `& echo $! > /tmp/mock.pid`, and **check it
+actually started** (`grep "answers by" /tmp/mock.log`): if the port is taken,
+the old process silently answers your questions instead.
 
 ## 5. Fullscreen on the Pi's display
 

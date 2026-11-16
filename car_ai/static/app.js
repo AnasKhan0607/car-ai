@@ -179,7 +179,12 @@ async function ask(question) {
       pending.remove();
       addMessage("error", `<p>${esc(data.error)}</p>`);
     } else {
-      const trace = (data.tool_calls || [])
+      // Which brain answered: the driver should know when they're offline
+      // and getting the small local model, or no model at all.
+      const BRAIN = { claude: "Claude", ollama: "local model (offline)",
+                      none: "readings only, no AI", rule: "built-in answer" };
+      const via = BRAIN[data.brain] ? `<span class="via">${BRAIN[data.brain]}</span>` : "";
+      const trace = via + (data.tool_calls || [])
         .map((t) => `<span>${esc(t.tool)}()</span>`).join("");
       pending.className = "msg msg--bot";
       pending.innerHTML = `<p>${esc(data.answer).replace(/\n/g, "<br>")}</p>` +

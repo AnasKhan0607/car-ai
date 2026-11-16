@@ -54,9 +54,9 @@ car, and the README rows for driving and layout are ✅.
   Guards added in code (unreadable topics, invented-number check, simulated
   label). Still slow (25–65 s) and can misattribute readings: the baseline
   #7 is measured against with `scripts/chat_check.py`.
-- Add a `Brain` in front of the assistant: Claude Code headless first
-  (`claude -p ... --output-format json`, ~30 s timeout), then Ollama, then a
-  short canned reply. Detect usage-limit errors and back off until reset.
+- ~~Add a `Brain` in front of the assistant~~ (#7): Claude (2.5–4 s on the
+  Pi), then Ollama, then a readings summary; backoff per failure kind. Still
+  to see: the hotspot actually dropping out mid-drive.
 - Claude gets a compact summary (readings + units + normal ranges, trend,
   active DTCs, trip so far), never the raw stream. `data_source` stays on
   everything so a simulated session is still labelled as simulated.
