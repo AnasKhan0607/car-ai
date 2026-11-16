@@ -28,7 +28,11 @@ echo "$ALL" | grep -qE '^(app\.py|car_ai/.*\.(py|js|html)|scripts/|requirements\
 # Any doc touch (or the marker /doc-check writes) unblocks.
 echo "$ALL" | grep -qE '^(CLAUDE\.md|README\.md|docs/|\.claude/skills/|\.claude/agents/|\.doc-check-passed$)' && exit 0
 
-echo "BLOCKED: this branch changes code but no docs."
-echo "Run /doc-check: it updates CLAUDE.md / README status / docs/PHASES.md if needed,"
-echo "or writes .doc-check-passed if nothing needs changing."
+# stderr, not stdout: Claude Code only relays a blocking hook's stderr.
+{
+  echo "BLOCKED: this branch changes code but no docs."
+  echo "Run /doc-check: it updates CLAUDE.md / README status / docs/PHASES.md if needed,"
+  echo "or writes .doc-check-passed if nothing needs changing."
+  echo "Then run gh pr create as its own command (this check sees only what is already committed)."
+} >&2
 exit 2
