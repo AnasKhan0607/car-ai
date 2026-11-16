@@ -13,13 +13,12 @@ Two behaviours worth knowing:
   70 km/h gets ignored at the moment it matters.
 
 * Alerts CLEAR on their own once the reading returns to normal, but a fired
-  alert is always written to the log even if it clears, so a transient spike
+  alert is always written to the drive log (SQLite, see drivelog.py) even if it clears, so a transient spike
   is still there when you review the drive afterwards.
 """
 
 from __future__ import annotations
 
-import csv
 import logging
 import threading
 import time
@@ -27,7 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .sensors import SENSORS, SENSORS_BY_KEY, normal_range_text
+from .drivelog import DriveLog
+from .sensors import SENSORS, SENSORS_BY_KEY, VEHICLE_PROFILE, normal_range_text
 
 log = logging.getLogger("car_ai.monitor")
 
@@ -57,24 +57,25 @@ class Monitor:
     """Evaluates each snapshot for trouble and appends it to a drive log."""
 
     def __init__(self, log_dir: Path | str | None = None, debounce: int = 2,
-                 enable_logging: bool = True):
+                 enable_logging: bool = True, mode: str = "live"):
         self.debounce = max(1, debounce)
         self._lock = threading.Lock()
         self._alerts: dict[str, Alert] = {}
         self._strikes: dict[str, int] = {}
         self._known_dtcs: set[str] | None = None
         self._history: list[dict[str, Any]] = []   # fired alerts, for review
-        self._csv_path: Path | None = None
-        self._csv_fields: list[str] = []
+        self._drivelog: DriveLog | None = None
         if enable_logging:
             # --log-dir arrives as a str from argparse; coerce it here so the
             # only place that touches the filesystem always has a Path.
-            self._open_log(Path(log_dir) if log_dir else DEFAULT_LOG_DIR)
+            directory = Path(log_dir) if log_dir else DEFAULT_LOG_DIR
+            self._drivelog = DriveLog(directory / "drives.db", mode=mode,
+                                      vehicle=VEHICLE_PROFILE)
 
     # -- public ----------------------------------------------------------
     @property
     def log_path(self) -> Path | None:
-        return self._csv_path
+        return self._drivelog.path if self._drivelog and self._drivelog.drive_id else None
 
     def active_alerts(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -94,10 +95,8 @@ class Monitor:
             self._evaluate(state)
         except Exception:
             log.exception("alert evaluation failed")
-        try:
-            self._append_log(state)
-        except Exception:
-            log.exception("drive log append failed")
+        if self._drivelog is not None:
+            self._drivelog.record(state)   # never raises
 
     # -- alerting --------------------------------------------------------
     def _evaluate(self, state) -> None:
@@ -117,6 +116,8 @@ class Monitor:
         # A new fault code is always worth surfacing immediately -- no debounce,
         # because the ECU has already done the debouncing for us.
         codes = {d["code"] for d in state.dtcs}
+        if self._drivelog is not None and codes != (self._known_dtcs or set()):
+            self._drivelog.event("dtc", message=" ".join(sorted(codes)) or "cleared")
         if self._known_dtcs is None:
             self._known_dtcs = codes
             if codes:
@@ -193,40 +194,12 @@ class Monitor:
             self._history.append({**alert.as_dict(),
                                   "at": time.strftime("%Y-%m-%d %H:%M:%S")})
         log.warning("ALERT [%s] %s: %s", alert.severity, alert.title, alert.message)
+        if self._drivelog is not None:
+            # A fired alert stays in the log even if it clears a poll later.
+            self._drivelog.event("alert", alert.key, alert.severity,
+                                 f"{alert.title}: {alert.message}")
 
     def _clear(self, key: str) -> None:
         self._strikes.pop(key, None)
         with self._lock:
             self._alerts.pop(key, None)
-
-    # -- drive log -------------------------------------------------------
-    def _open_log(self, log_dir: Path) -> None:
-        try:
-            log_dir.mkdir(parents=True, exist_ok=True)
-            stamp = time.strftime("%Y%m%d_%H%M%S")
-            self._csv_path = log_dir / f"drive_{stamp}.csv"
-            self._csv_fields = (["timestamp", "mode", "connection"]
-                                + [s.key for s in SENSORS]
-                                + ["dtcs", "alerts"])
-            with self._csv_path.open("w", newline="") as fh:
-                csv.writer(fh).writerow(self._csv_fields)
-            log.info("logging drive to %s", self._csv_path)
-        except Exception:
-            log.exception("could not open drive log; continuing without it")
-            self._csv_path = None
-
-    def _append_log(self, state) -> None:
-        if self._csv_path is None:
-            return
-        row = [time.strftime("%Y-%m-%d %H:%M:%S"), state.mode,
-               state.connection_status]
-        for sensor in SENSORS:
-            reading = state.readings.get(sensor.key)
-            row.append("" if reading is None or reading.value is None
-                       else reading.value)
-        row.append(" ".join(d["code"] for d in state.dtcs))
-        with self._lock:
-            row.append(" ".join(f"{a.severity}:{a.key}"
-                                for a in self._alerts.values()))
-        with self._csv_path.open("a", newline="") as fh:
-            csv.writer(fh).writerow(row)

@@ -19,7 +19,7 @@ turbo). It merges the original dashboard work with the owner's build spec
 
 ## Phase 0: Foundation ✅
 
-Live dashboard, alert engine, simulator scenarios, LLM tool layer, CSV drive
+Live dashboard, alert engine, simulator scenarios, LLM tool layer, drive
 log, start-on-boot kiosk on the 7" touchscreen.
 
 Done 2026-11-15: live reads confirmed on the 430i (parked, idling), kiosk boots
@@ -75,7 +75,8 @@ answer with the hotspot off, and both refuse to invent a missing reading.
 
 The car cuts power with no shutdown every time it is switched off.
 
-- Move the drive log from CSV to SQLite in WAL mode, small batched writes.
+- ~~Move the drive log from CSV to SQLite in WAL mode~~ (#31): one
+  transaction per poll, `synchronous=FULL`; survives `kill -9` in the self-test.
 - Writable data partition (or USB stick) for logs and the database.
 - Overlay (read-only) root filesystem. Design the deploy path first: with the
   overlay on, `git pull` on the Pi no longer persists.
