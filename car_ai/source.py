@@ -486,6 +486,11 @@ class MockSource(VehicleSource):
             "long_fuel_trim": 2 + wave,
             "run_time": t,
             "fuel_rate": max(0.5, 7 + wave * 4),
+            "catalyst_temp": 560 + wave * 90,
+            "fuel_rail_pressure": 120 + wave * 50,
+            "barometric_pressure": 101.0,
+            "distance_since_codes_cleared": 12400 + t / 40.0,
+            "distance_with_mil": 0.0,
         }.copy()
 
         # Scenario overlays -- the whole point of the simulator.
