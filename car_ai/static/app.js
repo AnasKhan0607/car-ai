@@ -23,11 +23,18 @@ function fmt(reading) {
   if (reading.value === null || reading.value === undefined) {
     return reading.status === "unsupported" ? "n/s" : "--";
   }
-  if (reading.key === "run_time") {
-    const s = Math.floor(reading.value);
-    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-  }
+  if (reading.key === "run_time") return runTime(reading.value)[0];
   return String(reading.value);
+}
+
+/* Run time arrives in seconds (the unit the model sees too), but "9071 s" or
+   "151:11 s" means nothing at a glance. Returns [number, unit] for the tile. */
+function runTime(seconds) {
+  const s = Math.floor(seconds);
+  if (s < 60) return [String(s), "s"];
+  const m = Math.floor(s / 60);
+  if (m < 60) return [String(m), "min"];
+  return [`${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`, "min"];
 }
 
 function noteFor(reading) {
@@ -44,6 +51,11 @@ function renderTiles(state) {
   for (const [key, el] of tiles) {
     const r = state.readings[key];
     el.querySelector(".num").textContent = fmt(r ? { ...r, key } : null);
+    if (key === "run_time") {
+      // The template prints the sensor's unit ("s"); swap it to match.
+      el.querySelector(".unit").textContent =
+        r && r.value != null ? runTime(r.value)[1] : r ? r.unit : "";
+    }
     el.dataset.status = r ? r.status : "no_data";
     el.dataset.stale = r && r.stale ? "true" : "false";
     const note = el.querySelector(".tile-note");
