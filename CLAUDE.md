@@ -93,6 +93,9 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | Remember Claude failures | Backoff by kind (`BACKOFF_S`): auth 10 min, usage limit 30 min, timeout 2 min. In a dead zone the first question waits up to 30 s; later ones go straight to Ollama. Restart the service after logging in to clear an auth backoff. |
 | Fuel level on BMW | PID `012F` is optional and many BMWs don't expose it, but this 430i does (read 40% live). Fuel rate (`015E`) is the one it lacks: permanent `unsupported`. The mock still marks fuel level unsupported deliberately, to exercise that path. |
 | Flask `threaded=True` | A model answer occupies a request for many seconds; the dashboard must keep refreshing. |
+| Cockpit UI is offline-first | three.js r169, the Rajdhani font and `static/models/car.glb` are vendored under `car_ai/static/`; no CDN, because the car has no signal exactly when it matters. `car3d.js` caps at 30 fps and stops rendering off the cockpit view. Measured steady state with all glow effects: Chromium ~35% of one core, whole Pi ~9% busy, 52 °C, no throttling. Glow is additive sprites, not a bloom pass (bloom breaks the transparent canvas and costs far more). |
+| Dials read `sensors.py` | A dial's scale is the sensor's `gauge=(min, max)`; its amber/red zones are the profile-adjusted thresholds. A reading with no value draws an empty dial, never one at zero. |
+| `car.glb` is CC BY-SA | Generated with Hyper3D Rodin from two CC BY-SA 3.0 DE Commons photos; credits in `static/models/CREDITS.md`. Replacing it means updating that file. |
 | Bind `::`, not `0.0.0.0` | The iPhone hotspot is IPv6-only; an IPv4-only server can't be opened from a phone in the car. `default_host()` probes for IPv6 and falls back to `0.0.0.0`. `--host 127.0.0.1` still restricts to the Pi. |
 
 ## Commands

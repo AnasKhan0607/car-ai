@@ -3,37 +3,71 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b0e13">
+<meta name="theme-color" content="#05070b">
 <title>Car AI</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{# Everything is bundled under static/vendor: the car loses signal, the
+   dashboard must not. #}
+<script type="importmap">
+{ "imports": { "three": "{{ url_for('static', filename='vendor/three/three.module.min.js') }}",
+               "three/addons/": "{{ url_for('static', filename='vendor/three/addons/') }}" } }
+</script>
 </head>
-<body>
+<body data-view="cockpit">
+
+{# A dial's scale and its warn/crit bands come from sensors.py (after the
+   vehicle profile), the same numbers the alert monitor uses. #}
+{% macro gauge(s, size) -%}
+<div class="gauge gauge--{{ size }}" data-key="{{ s.key }}"
+     data-min="{{ s.gauge[0] }}" data-max="{{ s.gauge[1] }}"
+     data-warn-low="{{ s.warn_low if s.warn_low is not none else '' }}"
+     data-crit-low="{{ s.crit_low if s.crit_low is not none else '' }}"
+     data-warn-high="{{ s.warn_high if s.warn_high is not none else '' }}"
+     data-crit-high="{{ s.crit_high if s.crit_high is not none else '' }}"
+     data-decimals="{{ s.decimals }}">
+  <svg class="dial" viewBox="0 0 200 200" aria-hidden="true"></svg>
+  <div class="gauge-readout">
+    <span class="num">--</span>
+    <span class="unit">{{ s.unit }}</span>
+  </div>
+  <div class="gauge-label">{{ s.label }}</div>
+  <div class="gauge-note"></div>
+</div>
+{%- endmacro %}
 
 <header class="topbar">
   <div class="brand">CAR<span>AI</span></div>
   <div id="mode-pill" class="pill pill--idle">connecting…</div>
+  <div id="dtc-chip" class="chip" hidden></div>
   <div class="topbar-spacer"></div>
-  <div id="poll-info" class="meta">polling every {{ interval|int }}s</div>
+  <nav class="tabs" aria-label="Views">
+    <button data-view="cockpit" class="tab is-on">Cockpit</button>
+    <button data-view="sensors" class="tab">Sensors</button>
+  </nav>
   <div id="clock" class="clock">--:--</div>
-  <button id="chat-toggle" class="chat-toggle" aria-label="Toggle chat">💬</button>
+  <button id="chat-toggle" class="chat-toggle" aria-label="Ask about your car">ASK</button>
 </header>
 
 <div id="alerts" class="alerts" hidden></div>
 
-<main class="layout">
+<main class="views">
 
-  <section class="dash" aria-label="Live vehicle data">
-
-    <div class="tiles tiles--primary">
-      {% for s in primary %}
-      <article class="tile" data-key="{{ s.key }}">
-        <div class="tile-label">{{ s.label }}</div>
-        <div class="tile-value"><span class="num">--</span><span class="unit">{{ s.unit }}</span></div>
-        <div class="tile-note"></div>
-      </article>
-      {% endfor %}
+  <section class="view view--cockpit" aria-label="Cockpit">
+    <div class="cockpit-main">
+      {{ gauge(sensors.speed, "big") }}
+      <div class="stage" id="stage">
+        <canvas id="car-canvas" aria-label="Your car"></canvas>
+        <div class="stage-floor"></div>
+        <div class="stage-caption" id="stage-caption">{{ vehicle }}</div>
+      </div>
+      {{ gauge(sensors.rpm, "big") }}
     </div>
+    <div class="cockpit-strip">
+      {% for key in small_gauges %}{{ gauge(sensors[key], "small") }}{% endfor %}
+    </div>
+  </section>
 
+  <section class="view view--sensors" aria-label="All sensors">
     <div class="panel">
       <div class="panel-head">
         <h2>Fault codes</h2>
@@ -41,52 +75,45 @@
       </div>
       <div id="dtc-body" class="dtc-body">Reading…</div>
     </div>
-
-    <details class="panel panel--collapsible" open>
-      <summary><h2>All sensors</h2></summary>
-      <div class="tiles tiles--secondary">
-        {% for s in secondary %}
-        <article class="tile tile--small" data-key="{{ s.key }}">
-          <div class="tile-label">{{ s.label }}</div>
-          <div class="tile-value"><span class="num">--</span><span class="unit">{{ s.unit }}</span></div>
-        </article>
-        {% endfor %}
-      </div>
-    </details>
-
+    <div class="tiles">
+      {% for s in secondary %}
+      <article class="tile" data-key="{{ s.key }}">
+        <div class="tile-label">{{ s.label }}</div>
+        <div class="tile-value"><span class="num">--</span><span class="unit">{{ s.unit }}</span></div>
+        <div class="tile-note"></div>
+      </article>
+      {% endfor %}
+    </div>
     <div id="footer-meta" class="footer-meta"></div>
-  </section>
-
-  <section id="chat" class="chat" aria-label="Ask about your car">
-    <div class="chat-head">
-      <h2>Ask about your car</h2>
-      <button id="chat-reset" class="ghost-btn" title="Start a new conversation">clear</button>
-    </div>
-
-    <div id="chat-log" class="chat-log">
-      <div class="msg msg--bot">
-        <p>Ask me anything about the car — “is my engine running hot?”, “do I have
-        any fault codes?”, “how’s everything looking?”</p>
-        <p class="muted">Running <code>{{ model }}</code> locally. Answers can take
-        a few seconds on the Pi.</p>
-      </div>
-    </div>
-
-    <div class="suggestions" id="suggestions">
-      <button>How's everything looking?</button>
-      <button>Is my engine running hot?</button>
-      <button>Do I have any fault codes?</button>
-    </div>
-
-    <form id="chat-form" class="chat-form" autocomplete="off">
-      <input id="chat-input" type="text" placeholder="Ask about your car…"
-             maxlength="2000" aria-label="Your question">
-      <button id="chat-send" type="submit">Ask</button>
-    </form>
   </section>
 
 </main>
 
+<section id="chat" class="chat" aria-label="Ask about your car">
+  <div class="chat-head">
+    <h2>Ask about your car</h2>
+    <button id="chat-reset" class="ghost-btn" title="Start a new conversation">clear</button>
+    <button id="chat-close" class="ghost-btn" aria-label="Close">✕</button>
+  </div>
+  <div id="chat-log" class="chat-log">
+    <div class="msg msg--bot">
+      <p>Ask me anything about the car: “is my engine running hot?”, “do I have
+      any fault codes?”, “how’s everything looking?”</p>
+    </div>
+  </div>
+  <div class="suggestions" id="suggestions">
+    <button>How's everything looking?</button>
+    <button>Is my engine running hot?</button>
+    <button>Do I have any fault codes?</button>
+  </div>
+  <form id="chat-form" class="chat-form" autocomplete="off">
+    <input id="chat-input" type="text" placeholder="Ask about your car…"
+           maxlength="2000" aria-label="Your question">
+    <button id="chat-send" type="submit">Ask</button>
+  </form>
+</section>
+
 <script src="{{ url_for('static', filename='app.js') }}"></script>
+<script type="module" src="{{ url_for('static', filename='car3d.js') }}"></script>
 </body>
 </html>

@@ -55,6 +55,9 @@ ignored at the moment it matters. `classify()` treats a `None` threshold as
 override to `VEHICLE_PROFILES["bmw_b46"]` (threshold **and** `context`) rather
 than bending the generic entry; `--selftest` checks every profile.
 
+**Primary sensors need `gauge=(min, max)`**: they're drawn as dials in the
+cockpit, and the template reads the scale from there.
+
 **Tier by how fast it actually changes.** Each PID costs ~50–100 ms on an
 ELM327. Only things a driver watches continuously belong in `TIER_PRIMARY`.
 
