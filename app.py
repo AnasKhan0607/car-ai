@@ -119,6 +119,20 @@ def self_test() -> int:
             moved = [f for f in fields if f != "context" and getattr(s, f) != getattr(g, f)]
             print(f"    {name}: {key} {', '.join(f'{f} {getattr(g, f)}->{getattr(s, f)}' for f in moved)}")
     print(f"  Loaded profile: {VEHICLE_PROFILE or 'generic'}")
+
+    # Staleness follows each sensor's own poll tier: a slow-tier value must not
+    # read as stale between its normal refreshes, yet must once it misses one.
+    from car_ai.sensors import SENSORS_BY_KEY, TIER_PRIMARY, TIER_SLOW
+    from car_ai.source import Reading
+    timed = MockSource(interval=5.0)
+    for tier, fresh, missed in ((TIER_PRIMARY, 15, 25), (TIER_SLOW, 35, 65)):
+        sensor = next(s for s in SENSORS_BY_KEY.values() if s.tier == tier)
+        limit = timed._stale_after(sensor)
+        for age, want in ((fresh, False), (missed, True)):
+            r = Reading(key="t", label="t", unit="", value=1.0,
+                        updated_at=time.time() - age, stale_after=limit)
+            assert r.stale is want, f"tier {tier}: {age}s old stale={r.stale}"
+    print("  Staleness per poll tier: ok")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
 

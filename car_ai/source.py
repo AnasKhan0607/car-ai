@@ -42,7 +42,8 @@ from .sensors import SENSORS, SENSORS_BY_KEY, Sensor, classify, describe_dtc
 
 log = logging.getLogger("car_ai.source")
 
-# A reading older than this is reported as stale rather than current.
+# A reading older than this is reported as stale rather than current. This is
+# the floor; slower poll tiers get longer (see VehicleSource._stale_after).
 STALE_AFTER_S = 20.0
 # How long to wait before retrying a dropped connection.
 RECONNECT_DELAY_S = 10.0
@@ -58,6 +59,7 @@ class Reading:
     status: str = "no_data"   # ok | warn | crit | unsupported | no_data | error
     detail: str = ""          # why, when there is no value
     updated_at: float = 0.0
+    stale_after: float = STALE_AFTER_S  # set per sensor by its poll tier
 
     @property
     def age(self) -> float:
@@ -65,7 +67,7 @@ class Reading:
 
     @property
     def stale(self) -> bool:
-        return self.value is not None and self.age > STALE_AFTER_S
+        return self.value is not None and self.age > self.stale_after
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -182,6 +184,13 @@ class VehicleSource:
             elapsed = time.time() - started
             self._stop.wait(max(0.5, self.interval - elapsed))
 
+    def _stale_after(self, sensor: Sensor) -> float:
+        # A tier-N sensor is only re-read every N cycles, so judging it by the
+        # same clock as a primary one marks it stale between perfectly normal
+        # reads: a TIER_SLOW value is ~30 s old just before its next read.
+        # Stale means it has missed one of its *own* refreshes.
+        return max(STALE_AFTER_S, 2 * sensor.tier * self.interval)
+
     def _poll_cycle(self) -> None:
         with self._lock:
             n = self._state.poll_count + 1
@@ -202,7 +211,9 @@ class VehicleSource:
                 if prev is not None:
                     readings[sensor.key] = prev
                     continue
-            readings[sensor.key] = self._read(sensor)
+            reading = self._read(sensor)
+            reading.stale_after = self._stale_after(sensor)
+            readings[sensor.key] = reading
 
         updates: dict[str, Any] = {
             "readings": readings,
