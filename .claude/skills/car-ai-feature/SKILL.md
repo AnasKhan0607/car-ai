@@ -32,7 +32,11 @@ source.py   polling thread owns the ELM327, publishes an immutable VehicleState
 
 1. **One thread owns the adapter.** Everything else reads the snapshot.
 2. **No invented numbers.** Missing data surfaces as `no_data` / `error` /
-   `unsupported`, including in anything an AI says or a report writes.
+   `unsupported`, including in anything an AI says or a report writes. Don't
+   rely on the prompt for this: model output that reaches the driver goes
+   through `invented_numbers()` (number **and** unit must match a tool result)
+   with `readings_summary()` as the fallback. Any new brain or report path
+   must do the same.
 3. **`data_source` / `mode: "mock"` reaches every output**: tool results, UI,
    prompts, and new outputs like trip summaries or spoken replies.
 4. **Tool results carry value + unit + normal range**, and tools take zero

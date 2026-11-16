@@ -133,6 +133,56 @@ def self_test() -> int:
                         updated_at=time.time() - age, stale_after=limit)
             assert r.stale is want, f"tier {tier}: {age}s old stale={r.stale}"
     print("  Staleness per poll tier: ok")
+
+    # History trimming must never drop the question being answered: when it
+    # did, the model got a page of readings with no question and invented one.
+    from car_ai.assistant import HISTORY_CHAR_BUDGET, Assistant
+    a = Assistant(source)
+    a._messages = [
+        {"role": "user", "content": "earlier question"},
+        {"role": "assistant", "content": "x" * HISTORY_CHAR_BUDGET},
+        {"role": "user", "content": "current question"},
+        {"role": "assistant", "content": ""},
+        {"role": "tool", "content": "y" * (HISTORY_CHAR_BUDGET + 1)},
+    ]
+    a._trim()
+    assert a._messages[0]["content"] == "current question", a._messages[0]
+    all_readings = json.dumps(dispatch(registry, "get_all_readings"))
+    assert len(all_readings) < HISTORY_CHAR_BUDGET // 2, len(all_readings)
+    print(f"  History trim keeps the current question; get_all_readings is "
+          f"{len(all_readings)} chars: ok")
+
+    # Questions about things OBD-II never reports get a fixed answer in code;
+    # nearby readings that ARE on OBD must still reach the model.
+    from car_ai.assistant import not_on_obd
+    for q, want in (("What's my tyre pressure?", "tyre pressure"),
+                    ("are my tires ok", "tyre pressure"),
+                    ("Is my oil level low?", "oil level"),
+                    ("do I have enough coolant", "coolant level"),
+                    ("What's my oil temperature?", None),
+                    ("What's my coolant temperature?", None),
+                    ("How is the car doing?", None),
+                    ("Am I tired of driving?", None)):
+        assert not_on_obd(q) == want, (q, not_on_obd(q))
+    print("  Unreadable-topic guard: ok")
+
+    # Numbers in an answer must come from the tools; an invented one gets the
+    # answer replaced with a code-written summary that is still labelled
+    # simulated when it is.
+    from car_ai.assistant import invented_numbers, readings_summary
+    trace = [{"tool": "get_speed", "result": dispatch(registry, "get_speed")},
+             {"tool": "get_all_readings", "result": dispatch(registry, "get_all_readings")}]
+    speed = trace[0]["result"]["value"]
+    assert not invented_numbers(f"You're doing {speed} km/h.", trace)
+    assert invented_numbers("You're doing 999 km/h.", trace) == {999.0}
+    rpm = next(v["value"] for k, v in trace[1]["result"]["readings"].items() if k == "rpm")
+    assert not invented_numbers(f"Engine at {rpm} rpm, normal is below 4500 rpm.", trace)
+    assert invented_numbers(f"A moderate speed of {rpm} km/h.", trace) == {float(rpm)}
+    summary = readings_summary(trace)
+    assert summary.startswith("SIMULATED") and f"Speed: {speed} km/h" in summary, summary
+    everything = dispatch(registry, "get_all_readings")
+    assert everything["fault_codes"] and everything["active_alerts"], everything
+    print("  Invented-number check and fallback summary: ok")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
 

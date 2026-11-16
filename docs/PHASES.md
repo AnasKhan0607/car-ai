@@ -50,8 +50,10 @@ car, and the README rows for driving and layout are ✅.
 
 ## Phase 2: The brain
 
-- Run the existing Ollama chat loop end-to-end on the Pi. **It has never been
-  run.** Fix what breaks before adding a second model.
+- ~~Run the Ollama chat loop end-to-end~~ (#6): runs, live and simulated.
+  Guards added in code (unreadable topics, invented-number check, simulated
+  label). Still slow (25–65 s) and can misattribute readings: the baseline
+  #7 is measured against with `scripts/chat_check.py`.
 - Add a `Brain` in front of the assistant: Claude Code headless first
   (`claude -p ... --output-format json`, ~30 s timeout), then Ollama, then a
   short canned reply. Detect usage-limit errors and back off until reset.

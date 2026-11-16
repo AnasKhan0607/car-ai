@@ -107,15 +107,32 @@ def build_registry(source) -> tuple[dict[str, Callable[[], dict]], list[dict]]:
     def get_all_readings() -> dict:
         state = source.snapshot()
         readings = {k: _describe(state, k) for k in SENSORS_BY_KEY}
-        available = {k: v for k, v in readings.items() if v.get("available")}
+        # Compact form: the full per-sensor dict for 20+ sensors overflowed the
+        # model's window. Every value still carries unit, status and normal
+        # range (never a bare number); the long `context` text is kept only
+        # where it matters -- readings that are not ok. Per-sensor tools still
+        # return the full form.
+        keep = ("value", "unit", "status", "normal_range", "warning")
+        available = {
+            k: {f: v[f] for f in keep if f in v} |
+               ({"context": v["context"]} if v["status"] != "ok" else {})
+            for k, v in readings.items() if v.get("available")
+        }
         unavailable = sorted(k for k, v in readings.items() if not v.get("available"))
+        # A broad "is anything wrong?" usually gets only this one tool call, so
+        # it carries the fault codes and alerts too; without them the model
+        # called a car with a stored P0217 overheat code "healthy".
+        alerts = source.monitor.active_alerts() if getattr(source, "monitor", None) else []
         return {
             "readings": available,
+            "fault_codes": [f"{d['code']}: {d['description']}" for d in state.dtcs],
+            "active_alerts": [a["message"] for a in alerts],
             "unavailable_sensors": unavailable,
             "data_source": "simulated" if state.mode == "mock" else "live vehicle",
-            "context": "Every sensor currently readable on this vehicle. Sensors "
-                       "listed under unavailable_sensors cannot be read -- do not "
-                       "guess values for them.",
+            "context": "Every sensor currently readable on this vehicle, plus "
+                       "stored fault codes and active alerts (empty lists mean "
+                       "none). Sensors listed under unavailable_sensors cannot "
+                       "be read -- do not guess values for them.",
         }
 
     register("get_all_readings",

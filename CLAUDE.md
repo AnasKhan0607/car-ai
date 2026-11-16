@@ -81,6 +81,9 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | Never bare numbers | Tool results carry value + unit + normal range. Handed `98`, a 3B model invents what it means. |
 | Pass DTC descriptions through | python-OBD's description is authoritative. A 3B model asked to explain `P0128` from memory produces something fluent and wrong. |
 | Dispatcher never raises | Unknown tool name returns a structured error listing the real tools, so the model self-corrects instead of killing the turn. |
+| The model can't be trusted with a number | Seen on the Pi (#6): "50 km/h" parked, "35 kPa" tyre pressure (it was fuel %), rpm reported as km/h. So in code: `not_on_obd()` answers tyre/oil-level/brake questions without the model; `invented_numbers()` checks every number **and its unit** against the tool results and swaps in `readings_summary()` if one is made up; mock answers get the "simulated" label in code. Prompt rules alone did not hold. |
+| Trim never drops the current question | It did, because `get_all_readings` alone exceeded the budget, and the model answered a question nobody asked. That tool now returns a compact form (context only for non-ok readings) plus fault codes and alerts. |
+| `temperature: 0` | Diagnostic read-back, not prose. Set with `num_ctx` in `MODEL_OPTIONS`. |
 | Fuel level on BMW | PID `012F` is optional and many BMWs don't expose it, but this 430i does (read 40% live). Fuel rate (`015E`) is the one it lacks: permanent `unsupported`. The mock still marks fuel level unsupported deliberately, to exercise that path. |
 | Flask `threaded=True` | A model answer occupies a request for many seconds; the dashboard must keep refreshing. |
 
@@ -109,8 +112,10 @@ promote a row to ✅ without actually running it.** As of the last session:
   on the Pi), mock scenarios, dashboard rendering and alert states, HTTP API,
   CSV logging, **live reads from the 430i** (2026-11-15, parked and idling:
   CH340 ELM327 at `/dev/ttyUSB0`, CAN 11/500, 111 PIDs).
-- ⚠️ Unproven: the **LLM chat loop has still never been run end-to-end**;
-  live reads *while driving*; the 800×480 in-car layout (kiosk itself is
+- ✅ Chat loop end-to-end on the Pi (2026-11-16, #6), with the guards in the
+  constraints table. `llama3.2:3b` is still slow (25–65 s) and sometimes
+  pins a real number on the wrong sensor.
+- ⚠️ Unproven: live reads *while driving*; the 800×480 in-car layout (kiosk itself is
   verified: boots fullscreen on the 7" touchscreen via `car-ai.service` +
   `scripts/car-ai-dashboard.desktop`).
 - Coolant on this car runs ~108–110 °C at idle (BMW map thermostat, normal).
@@ -129,7 +134,11 @@ promote a row to ✅ without actually running it.** As of the last session:
   `car-ai.service` already holds it: `sudo systemctl stop car-ai` before
   running `app.py` by hand.
 - Over SSH, `pkill -f <pattern>` matches the SSH command's own shell and kills
-  the session. Use `pkill -f "[a]pp.py"` or `pkill -x chromium`.
+  the session, including when the same command line *starts* the process
+  (`... app.py --mock ...; pkill -f "[a]pp.py --mock"` still matches). Start
+  with `& echo $! > /tmp/x.pid` and `kill $(cat /tmp/x.pid)`, or `pkill -x`.
+- A second instance with `--mock --http-port 5001 --no-log` can run next to
+  the live service: the simulator never opens the adapter.
 - Touch dead but picture fine on the 7" display → the thin ribbon from the
   touch glass to the driver board is loose (`edt_ft5x06 ... error: -121`).
   Don't `modprobe -r edt_ft5x06`; it shares the display's power controller
