@@ -13,6 +13,14 @@ need the answer, so the local path is a first-class path, not a degraded one.
 Claude gets code-written summaries, never the raw telemetry stream. Not built
 yet; it's Phase 2 in `docs/PHASES.md`. Today only the Ollama path exists.
 
+**Terms (checked 2026-11-16, `docs/claude-terms.md`):** the owner using the
+unmodified `claude` binary with their own Pro/Max login, for their own car, is
+allowed. Calls must stay event-driven ("ordinary, individual usage"); never
+lift the OAuth token into our own client; sharing or selling the project means
+each user brings their own login or an API key. `--bare` (API key only) is
+slated to become the `-p` default, so the brain must accept
+`ANTHROPIC_API_KEY` too and fall through to Ollama on an auth error.
+
 ## The invariant — read before changing anything in `source.py`
 
 **Live data and simulated data are never mixed.**

@@ -59,8 +59,9 @@ car, and the README rows for driving and layout are ✅.
   active DTCs, trip so far), never the raw stream. `data_source` stays on
   everything so a simulated session is still labelled as simulated.
 - System prompt file describing the car and keeping spoken answers short.
-- Check Anthropic's current terms for personal headless use of a subscription
-  before relying on it; switch to the API if the project is ever shared.
+- ~~Check Anthropic's terms for personal headless use~~ (#9): allowed for
+  the owner's own use; see `docs/claude-terms.md` for the constraints #7 must
+  follow (clean working dir, API-key path too, event-driven only).
 
 **Done when:** in the car, a question gets a Claude answer online and an Ollama
 answer with the hotspot off, and both refuse to invent a missing reading.
