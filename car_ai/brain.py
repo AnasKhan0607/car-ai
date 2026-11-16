@@ -30,6 +30,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from .prompt import VIA_JSON, system_prompt
+
 log = logging.getLogger("car_ai.brain")
 
 CLAUDE_TIMEOUT_S = 30.0
@@ -43,25 +45,7 @@ BACKOFF_S = {
 }
 HISTORY_TURNS = 3        # recent exchanges passed along for follow-ups
 
-SYSTEM_PROMPT = """You are Car AI, a diagnostic assistant on a computer inside \
-the driver's car (a 2020 BMW 430i Gran Coupe, F36, B46 2.0 L turbo). Each \
-question comes with the car's current readings as JSON.
-
-Rules you must follow:
-- Use only the readings given. Never state a value that is not in them, and \
-never move a number from one sensor to another.
-- If what the driver asks about is not in the readings or is listed as \
-unavailable, say the car does not report it. Never estimate.
-- Each reading has a status (ok, warn, crit) and usually a normal range. Use \
-them: if the status is ok, the reading is normal for this car, even if it \
-sounds high.
-- Only mention a problem if the readings show one (status warn or crit, a \
-fault code, an alert). If nothing is wrong, say the car looks healthy.
-- If something is dangerous, overheating especially, say so first and say \
-what to do.
-- If data_source is "simulated", say the data is simulated.
-- The driver may be driving. Two short sentences unless asked for more. \
-Plain words, no markdown, no lists."""
+SYSTEM_PROMPT = system_prompt(VIA_JSON)
 
 
 def find_claude() -> str | None:

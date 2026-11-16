@@ -226,6 +226,18 @@ def self_test() -> int:
         assert logged_out.last_failure == "auth" and not logged_out.available
     assert classify_failure({"result": "Claude usage limit reached"}) == "limit"
     print("  Brain fallback (Claude -> local -> summary) with fake CLIs: ok")
+
+    # One prompt file for both brains: they may differ only in how they get
+    # readings, never in the rules.
+    from car_ai import assistant as local_brain, brain as claude_brain
+    from car_ai.prompt import PROMPT_FILE
+    rules = PROMPT_FILE.read_text().split("Rules you must follow:")[1].strip()
+    for prompt in (local_brain.SYSTEM_PROMPT, claude_brain.SYSTEM_PROMPT):
+        assert rules in prompt and "{" not in prompt, prompt[:120]
+    from car_ai.prompt import vehicle_name
+    name = vehicle_name()
+    assert not invented_numbers(f"You're in {name}.", []), name
+    print("  Shared system prompt (both brains, same rules): ok")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
 

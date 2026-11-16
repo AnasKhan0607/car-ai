@@ -29,6 +29,7 @@ import re
 import threading
 from typing import Any
 
+from .prompt import VIA_TOOLS, system_prompt, vehicle_name
 from .sensors import SENSORS_BY_KEY
 from .tools import build_registry, dispatch
 
@@ -44,28 +45,7 @@ MODEL_OPTIONS = {"temperature": 0, "num_ctx": 4096}
 # prompt, leaving room in a 4096-token window for the model's own reply.
 HISTORY_CHAR_BUDGET = 7000
 
-SYSTEM_PROMPT = """You are Car AI, a diagnostic assistant running on a computer \
-inside the vehicle, with live access to its OBD-II sensors.
-
-Rules you must follow:
-- To answer anything about the car's condition, CALL A TOOL. Never state a \
-sensor value you did not read from a tool.
-- If a tool says a sensor is unavailable or unsupported, say plainly that the \
-car does not report it. Never estimate or substitute a number.
-- If no tool covers what the driver asked about (tyre pressure, oil level, \
-brake pads, ...), say this system cannot read it from the car. Do not answer \
-a different question instead.
-- Only mention a problem if a tool reported it (status warn or crit, a fault \
-code, an alert). If every reading is ok, say the car looks healthy. Never \
-invent issues.
-- Each reading comes with its unit and its normal range. Use that range to say \
-clearly whether the value is normal, and explain what it means.
-- Talk like a good mechanic explaining things to a driver who is not technical: \
-concrete, brief, no jargon without a translation.
-- If something is dangerous -- overheating especially -- say so first and say \
-what to do about it.
-- Keep answers to a few sentences unless asked for detail. The driver may be \
-reading this at a glance."""
+SYSTEM_PROMPT = system_prompt(VIA_TOOLS)
 
 # Things drivers ask about that no OBD-II reading covers. Asked "what's my tyre
 # pressure?", the 3B model grabbed the nearest number and answered "35 kPa,
@@ -148,8 +128,13 @@ def _known(trace: list[dict[str, Any]]) -> tuple[set[float], set[tuple[float, st
 
 
 def invented_numbers(answer: str, trace: list[dict[str, Any]]) -> set[float]:
-    """Numbers in `answer` no tool returned, or returned with another unit."""
-    numbers, pairs = _known(trace)
+    """Numbers in `answer` no tool returned, or returned with another unit.
+
+    The car's description in the system prompt ("2020 BMW 430i ... 2.0 L") is
+    a given fact too, so it counts as known.
+    """
+    numbers, pairs = _known(trace + [{"tool": "system_prompt",
+                                      "result": {"vehicle": vehicle_name()}}])
     bad = {n for n in _numbers(answer) if round(n, 1) not in numbers}
     for n, u in _pairs(answer):
         if (n, u) not in pairs and (float(round(n)), u) not in pairs:
@@ -353,6 +338,16 @@ class Assistant:
                 if not answer:
                     answer = ("I could not put that into words -- try asking "
                               "again, or more specifically.")
+                if not trace:
+                    # Answered without reading the car. Seen on the Pi: "is
+                    # anything wrong?" -> "looks healthy" during a misfire.
+                    # Whatever it said, it isn't from the car, so show the car.
+                    log.warning("local model answered without a tool; "
+                                "replacing it: %r", answer)
+                    trace.append({"tool": "get_all_readings",
+                                  "result": dispatch(self.registry, "get_all_readings")})
+                    answer = readings_summary(trace)
+                    self._messages[-1]["content"] = answer
                 invented = invented_numbers(answer, trace)
                 if invented:
                     log.warning("answer had numbers no tool returned %s; "
