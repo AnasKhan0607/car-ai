@@ -54,7 +54,7 @@ Confirm `mode`, `connection.status`, and that unsupported sensors report
 ## 4. On the Pi
 
 ```bash
-ssh master@pi5.local          # password auth; key auth is not set up
+ssh pi5.local                 # key auth via ~/.ssh/pi5_ed25519 (see ~/.ssh/config)
 cd ~/car-ai && source ~/car_ai_env/bin/activate
 python app.py --mock          # or: python app.py   (live, adapter attached)
 ```

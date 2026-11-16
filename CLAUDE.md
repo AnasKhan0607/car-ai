@@ -66,7 +66,7 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | Never bare numbers | Tool results carry value + unit + normal range. Handed `98`, a 3B model invents what it means. |
 | Pass DTC descriptions through | python-OBD's description is authoritative. A 3B model asked to explain `P0128` from memory produces something fluent and wrong. |
 | Dispatcher never raises | Unknown tool name returns a structured error listing the real tools, so the model self-corrects instead of killing the turn. |
-| Fuel level on BMW | PID `012F` is optional and BMW generally doesn't expose it. Expect permanent `unsupported` on the 430i. The mock reproduces this deliberately. |
+| Fuel level on BMW | PID `012F` is optional and many BMWs don't expose it, but this 430i does (read 40% live). Fuel rate (`015E`) is the one it lacks: permanent `unsupported`. The mock still marks fuel level unsupported deliberately, to exercise that path. |
 | Flask `threaded=True` | A model answer occupies a request for many seconds; the dashboard must keep refreshing. |
 
 ## Commands
@@ -92,11 +92,14 @@ promote a row to ✅ without actually running it.** As of the last session:
 
 - ✅ Verified: tool layer, alert engine (incl. debounce + escalation, confirmed
   on the Pi), mock scenarios, dashboard rendering and alert states, HTTP API,
-  CSV logging.
+  CSV logging, **live reads from the 430i** (2026-11-15, parked and idling:
+  CH340 ELM327 at `/dev/ttyUSB0`, CAN 11/500, 111 PIDs).
 - ⚠️ Unproven: the **LLM chat loop has still never been run end-to-end**;
-  **live reads from a vehicle have never succeeded** (the ELM327 has never been
-  detected — a USB/`dialout` issue to work through at the car); kiosk visible
-  on screen; the 800×480 in-car layout.
+  live reads *while driving*; the 800×480 in-car layout (kiosk itself is
+  verified: boots fullscreen on the 7" touchscreen via `car-ai.service` +
+  `scripts/car-ai-dashboard.desktop`).
+- Known issue: this car idles at ~108–110 °C coolant, above the generic
+  `warn_high=105`, so the coolant alert fires on a healthy warm engine.
 
 ## Gotchas when debugging on hardware
 

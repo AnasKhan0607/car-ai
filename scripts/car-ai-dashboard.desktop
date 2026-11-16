@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Car AI Dashboard
+Comment=Open the Car AI dashboard fullscreen (server runs as car-ai.service)
+Exec=/home/master/car-ai/scripts/kiosk-browser.sh
+X-GNOME-Autostart-enabled=true

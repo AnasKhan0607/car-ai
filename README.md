@@ -24,8 +24,8 @@ No cloud. The model, the tools, and the logic all run on the device.
 | HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
 | Drive logging to CSV | ✅ Verified on the Pi |
 | Full LLM chat loop against Ollama | ⚠️ Code complete; **not yet run end-to-end** |
-| Live OBD-II reads from a real vehicle | ⚠️ Code complete; **not yet run against a car** |
-| Kiosk mode on the Pi's display | ⚠️ Written; not yet verified on hardware |
+| Live OBD-II reads from a real vehicle | ✅ Verified on the 430i (parked, engine idling) |
+| Kiosk mode on the Pi's display, starting on boot | ✅ Verified on the Pi's 7" touchscreen after a cold reboot |
 | Layout on a small (800×480) in-car screen | ⚠️ CSS written; not yet verified on hardware |
 
 Everything marked ✅ was exercised against the simulator and a running server;
@@ -33,8 +33,12 @@ the alert engine and drive logging were additionally confirmed on the Pi itself
 (a simulated overheat crossed the warn threshold, survived debounce, and
 escalated to critical ~80s later).
 
-Nothing has yet been validated **in a vehicle**, and the LLM loop has still not
-been run against a live Ollama server. Treat the ⚠️ rows as unproven.
+Live reads were confirmed on the 430i on 2026-11-15, parked with the engine
+idling: the ELM327 negotiated CAN 11-bit/500k, the car reported 111 supported
+PIDs, and every dashboard sensor read except `fuel_rate` (correctly shown as
+unsupported). Readings while actually driving are not yet verified. The LLM
+loop has still not been run against a live Ollama server. Treat the ⚠️ rows as
+unproven.
 
 ---
 
@@ -60,11 +64,12 @@ That is worse than not running. So:
 
 ### On BMW and fuel level
 
-Fuel level (PID `012F`) is **optional** in the OBD-II spec, and BMW generally
-does not expose it. On a BMW you should expect the fuel tile to read
+Fuel level (PID `012F`) is **optional** in the OBD-II spec, and many BMWs do
+not expose it. This 430i turned out to: it read 40% on the first live
+connection. What it does *not* expose is fuel rate (PID `015E`), which shows
 `n/s — not supported by this car`, permanently. That is the car, not a bug.
-The `--mock` simulator reproduces this deliberately, so the unsupported-sensor
-path is exercised during development.
+The `--mock` simulator still reports fuel level as unsupported deliberately, so
+the unsupported-sensor path is exercised during development.
 
 ---
 
@@ -158,8 +163,23 @@ python app.py --serial-port /dev/ttyUSB0   # or name it explicitly
 ./scripts/kiosk.sh               # from the Pi's desktop session, not SSH
 ```
 
-To start on boot, see `scripts/car-ai.service` (server) and add
-`scripts/kiosk.sh` to the desktop autostart (browser).
+### Start on boot
+
+Two halves, because a systemd service has no display to draw on:
+
+```bash
+# server: runs headless, restarts on failure
+sudo cp scripts/car-ai.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now car-ai
+
+# browser: waits for the server, then opens the dashboard fullscreen
+cp scripts/car-ai-dashboard.desktop ~/.config/autostart/
+sudo raspi-config nonint do_blanking 1   # stop the screen going dark mid-drive
+```
+
+Do **not** autostart `scripts/kiosk.sh` alongside the service: it launches its
+own `app.py`, and two instances fight over the adapter. To leave kiosk mode
+without a keyboard, `ssh pi5.local pkill -x chromium`.
 
 ---
 
@@ -226,9 +246,9 @@ running the app, adding a sensor, and deploying to the Pi.
 ## Roadmap
 
 - [ ] Run the LLM loop end-to-end against Ollama on the Pi
-- [ ] Verify live reads against the vehicle; confirm which PIDs it answers
+- [x] Verify live reads against the vehicle; confirm which PIDs it answers
 - [ ] Measure poll latency and dashboard responsiveness while driving
-- [ ] Verify the kiosk display on the in-car screen
+- [x] Verify the kiosk display on the in-car screen
 - [ ] 3D-printed enclosure
 
 ---
