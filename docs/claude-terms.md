@@ -4,6 +4,10 @@ Checked 2026-11-16 for #9, before building the Claude brain (#7). Re-check
 before relying on anything here; Anthropic changed these rules several times
 in 2026.
 
+**Decision (owner, 2026-11-16): use the owner's Pro/Max subscription.** Add
+an API key only if the subscription path stops working or the project is
+shared.
+
 ## What Anthropic's own docs say
 
 From the Claude Code [Legal and compliance][legal] page:
