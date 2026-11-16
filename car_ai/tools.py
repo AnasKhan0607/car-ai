@@ -104,6 +104,16 @@ def build_registry(source) -> tuple[dict[str, Callable[[], dict]], list[dict]]:
             lambda k=key: _describe(source.snapshot(), k),
         )
 
+    def problems(state) -> dict:
+        # Every broad tool carries the problems. A small model answers "is
+        # anything wrong?" from whichever one it picks; given only the
+        # connection status during a misfire, it said "looks healthy".
+        alerts = source.monitor.active_alerts() if getattr(source, "monitor", None) else []
+        return {
+            "fault_codes": [f"{d['code']}: {d['description']}" for d in state.dtcs],
+            "active_alerts": [a["message"] for a in alerts],
+        }
+
     def get_all_readings() -> dict:
         state = source.snapshot()
         readings = {k: _describe(state, k) for k in SENSORS_BY_KEY}
@@ -119,14 +129,11 @@ def build_registry(source) -> tuple[dict[str, Callable[[], dict]], list[dict]]:
             for k, v in readings.items() if v.get("available")
         }
         unavailable = sorted(k for k, v in readings.items() if not v.get("available"))
-        # A broad "is anything wrong?" usually gets only this one tool call, so
-        # it carries the fault codes and alerts too; without them the model
-        # called a car with a stored P0217 overheat code "healthy".
-        alerts = source.monitor.active_alerts() if getattr(source, "monitor", None) else []
+        # Without the problems, the model called a car with a stored P0217
+        # overheat code "healthy".
         return {
             "readings": available,
-            "fault_codes": [f"{d['code']}: {d['description']}" for d in state.dtcs],
-            "active_alerts": [a["message"] for a in alerts],
+            **problems(state),
             "unavailable_sensors": unavailable,
             "data_source": "simulated" if state.mode == "mock" else "live vehicle",
             "context": "Every sensor currently readable on this vehicle, plus "
@@ -186,6 +193,7 @@ def build_registry(source) -> tuple[dict[str, Callable[[], dict]], list[dict]]:
             "detail": state.connection_detail,
             "supported_sensor_count": state.supported_count,
             "poll_interval_s": source.interval,
+            **problems(state),
             "context": ("IMPORTANT: this session is running on SIMULATED data. "
                         "Any value you report is fake and must be described as "
                         "such." if state.mode == "mock" else

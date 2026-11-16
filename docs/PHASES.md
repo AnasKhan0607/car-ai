@@ -60,7 +60,9 @@ car, and the README rows for driving and layout are ✅.
 - Claude gets a compact summary (readings + units + normal ranges, trend,
   active DTCs, trip so far), never the raw stream. `data_source` stays on
   everything so a simulated session is still labelled as simulated.
-- System prompt file describing the car and keeping spoken answers short.
+- ~~System prompt file~~ (#8): `car_ai/system_prompt.txt`, shared by both
+  brains, names the car from its profile, two sentences max. Claude keeps to
+  it (2 sentences every time on the simulator); the 3B model often runs to 3–4.
 - ~~Check Anthropic's terms for personal headless use~~ (#9): allowed for
   the owner's own use; see `docs/claude-terms.md` for the constraints #7 must
   follow (clean working dir, API-key path too, event-driven only).

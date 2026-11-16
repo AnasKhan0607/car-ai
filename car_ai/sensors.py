@@ -245,6 +245,12 @@ VEHICLE_PROFILES: dict[str, dict[str, dict]] = {
 }
 
 
+# What the model is told it's sitting in. Generic stays generic.
+VEHICLE_NAMES: dict[str, str] = {
+    "bmw_b46": "a 2020 BMW 430i Gran Coupe (F36, B46 2.0 L turbo)",
+}
+
+
 def apply_profile(sensors: tuple[Sensor, ...],
                   profile: str | None) -> tuple[Sensor, ...]:
     """Return `sensors` with a vehicle profile's overrides applied.
