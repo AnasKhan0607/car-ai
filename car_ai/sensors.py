@@ -41,6 +41,9 @@ class Sensor:
     warn_high: float | None = None
     crit_high: float | None = None
     aliases: tuple[str, ...] = field(default_factory=tuple)  # fallback cmd names
+    # Dial scale (min, max) for the cockpit view. Kept here with the thresholds
+    # so a vehicle profile moves the coloured warn/crit bands on the dial too.
+    gauge: tuple[float, float] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -52,12 +55,12 @@ class Sensor:
 GENERIC_SENSORS: tuple[Sensor, ...] = (
     Sensor(
         key="speed", command="SPEED", label="Speed", unit="km/h",
-        to_unit="kph", primary=True, tier=TIER_PRIMARY,
+        to_unit="kph", primary=True, tier=TIER_PRIMARY, gauge=(0, 260),
         context="Road speed of the vehicle.",
     ),
     Sensor(
         key="rpm", command="RPM", label="Engine RPM", unit="rpm",
-        primary=True, tier=TIER_PRIMARY,
+        primary=True, tier=TIER_PRIMARY, gauge=(0, 7000),
         warn_high=4500, crit_high=6000,
         context="Engine crankshaft speed. Idle is ~600-900 rpm; highway "
                 "cruising is ~1500-3000 rpm. Sustained high rpm means the "
@@ -65,7 +68,7 @@ GENERIC_SENSORS: tuple[Sensor, ...] = (
     ),
     Sensor(
         key="coolant_temp", command="COOLANT_TEMP", label="Coolant", unit="°C",
-        to_unit="celsius", primary=True, tier=TIER_PRIMARY,
+        to_unit="celsius", primary=True, tier=TIER_PRIMARY, gauge=(40, 130),
         warn_low=60, warn_high=105, crit_high=112,
         context="Engine coolant temperature. Normal operating range is "
                 "~90-104 C. Above ~110 C is a genuine overheating risk and "
@@ -74,14 +77,14 @@ GENERIC_SENSORS: tuple[Sensor, ...] = (
     ),
     Sensor(
         key="engine_load", command="ENGINE_LOAD", label="Engine Load", unit="%",
-        primary=True, tier=TIER_PRIMARY,
+        primary=True, tier=TIER_PRIMARY, gauge=(0, 100),
         context="Calculated engine load -- the share of maximum available "
                 "torque currently in use. Low at idle and cruising, high "
                 "under hard acceleration or climbing.",
     ),
     Sensor(
         key="fuel_level", command="FUEL_LEVEL", label="Fuel", unit="%",
-        primary=True, tier=TIER_SECONDARY,
+        primary=True, tier=TIER_SECONDARY, gauge=(0, 100),
         warn_low=15, crit_low=8,
         context="Fuel remaining as a percentage of tank capacity. NOTE: this "
                 "is an optional OBD-II PID and many vehicles do not expose "
@@ -90,7 +93,7 @@ GENERIC_SENSORS: tuple[Sensor, ...] = (
     ),
     Sensor(
         key="voltage", command="CONTROL_MODULE_VOLTAGE", label="Battery", unit="V",
-        decimals=1, primary=True, tier=TIER_SECONDARY,
+        decimals=1, primary=True, tier=TIER_SECONDARY, gauge=(10, 16),
         warn_low=12.0, crit_low=11.5, warn_high=15.0, crit_high=15.5,
         context="Control module supply voltage, a good proxy for charging "
                 "system health. Engine off: ~12.6 V. Engine running: ~13.5-14.7 V "

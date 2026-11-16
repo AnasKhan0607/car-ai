@@ -11,7 +11,8 @@ import logging
 
 from flask import Flask, jsonify, render_template, request
 
-from .sensors import PRIMARY_KEYS, SECONDARY_KEYS, SENSORS_BY_KEY
+from .prompt import vehicle_name
+from .sensors import PRIMARY_KEYS, SECONDARY_KEYS, SENSORS_BY_KEY, VEHICLE_PROFILE
 
 log = logging.getLogger("car_ai.server")
 
@@ -22,10 +23,16 @@ def create_app(source, monitor, assistant) -> Flask:
 
     @app.get("/")
     def index():
+        # Cockpit: speed and rpm as the big dials, the other primary sensors
+        # as the strip of small ones.
         return render_template(
             "index.html",
-            primary=[SENSORS_BY_KEY[k] for k in PRIMARY_KEYS],
+            sensors=SENSORS_BY_KEY,
+            small_gauges=[k for k in PRIMARY_KEYS if k not in ("speed", "rpm")],
             secondary=[SENSORS_BY_KEY[k] for k in SECONDARY_KEYS],
+            # "a 2020 BMW 430i Gran Coupe (F36, ...)" -> "2020 BMW 430i Gran Coupe"
+            vehicle=(vehicle_name().removeprefix("a ").split(" (")[0]
+                     if VEHICLE_PROFILE else ""),
             model=assistant.model,
             interval=source.interval,
         )
