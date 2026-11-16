@@ -59,8 +59,11 @@ cd ~/car-ai && source ~/car_ai_env/bin/activate
 python app.py --mock          # or: python app.py   (live, adapter attached)
 ```
 
-Reachable from any machine on the LAN at `http://pi5.local:5000` — it binds
-`0.0.0.0` by default.
+Reachable from any machine on the network at `http://pi5.local:5000`. It
+binds `::` (IPv6 and IPv4) by default, which matters on the IPv6-only phone
+hotspot. In Claude Code sessions the Mac's sandbox blocks HTTP to the LAN even
+when `nc` connects, so test reachability with `curl` **on the Pi** against its
+own addresses (`hostname -I`).
 
 **The chat answers from Claude if the `claude` CLI is installed and logged in,
 otherwise from Ollama** (on the Pi), otherwise with a code-written readings

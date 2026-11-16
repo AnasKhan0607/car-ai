@@ -93,6 +93,7 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | Remember Claude failures | Backoff by kind (`BACKOFF_S`): auth 10 min, usage limit 30 min, timeout 2 min. In a dead zone the first question waits up to 30 s; later ones go straight to Ollama. Restart the service after logging in to clear an auth backoff. |
 | Fuel level on BMW | PID `012F` is optional and many BMWs don't expose it, but this 430i does (read 40% live). Fuel rate (`015E`) is the one it lacks: permanent `unsupported`. The mock still marks fuel level unsupported deliberately, to exercise that path. |
 | Flask `threaded=True` | A model answer occupies a request for many seconds; the dashboard must keep refreshing. |
+| Bind `::`, not `0.0.0.0` | The iPhone hotspot is IPv6-only; an IPv4-only server can't be opened from a phone in the car. `default_host()` probes for IPv6 and falls back to `0.0.0.0`. `--host 127.0.0.1` still restricts to the Pi. |
 
 ## Commands
 

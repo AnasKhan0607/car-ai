@@ -42,8 +42,9 @@ right for *this* car before anything is built on top of it.
   1–2 s for the core values; ~50–100 ms per PID makes that feasible only for
   the primary tier).
 - Verify the 800×480 layout is readable at a glance from the driver's seat.
-- Dashboard reachable from a phone on the hotspot (it is IPv6-only, and the
-  server currently binds IPv4 `0.0.0.0`).
+- Dashboard reachable from a phone on the hotspot (#5): the server now binds
+  `::` (IPv6 + IPv4). Verified on home Wi-Fi over both; still to check from
+  the phone on the IPv6-only hotspot.
 
 **Done when:** a real drive shows correct, non-alarming readings for a healthy
 car, and the README rows for driving and layout are ✅.
