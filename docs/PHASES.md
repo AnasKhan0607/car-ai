@@ -30,9 +30,9 @@ fullscreen after a cold reboot, touch works.
 The dashboard runs live but has only been seen parked. Make what it says
 right for *this* car before anything is built on top of it.
 
-- Per-vehicle thresholds: the B46 idles at ~108–110 °C coolant and ~111 °C oil,
-  so the generic `warn_high=105` fires on a healthy engine and the model is told
-  ">110 °C, pull over". Source BMW-specific ranges before changing them.
+- ~~Per-vehicle thresholds~~ (#1): `bmw_b46` profile raises coolant to warn
+  115 / crit 120 °C. Oil (~111 °C, warn 125) needed no change; recheck while
+  driving (#3).
 - List all 111 supported PIDs and add the useful ones (O2, catalyst temp,
   barometric pressure, distance since codes cleared, etc.) via `add-sensor`.
 - Verify live reads **while driving**: speed/RPM respond, no stale tiles,

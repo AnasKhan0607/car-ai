@@ -105,8 +105,9 @@ promote a row to ✅ without actually running it.** As of the last session:
   live reads *while driving*; the 800×480 in-car layout (kiosk itself is
   verified: boots fullscreen on the 7" touchscreen via `car-ai.service` +
   `scripts/car-ai-dashboard.desktop`).
-- Known issue: this car idles at ~108–110 °C coolant, above the generic
-  `warn_high=105`, so the coolant alert fires on a healthy warm engine.
+- Coolant on this car runs ~108–110 °C at idle (BMW map thermostat, normal).
+  Handled by the `bmw_b46` vehicle profile, which the Pi's service enables;
+  confirmed no false alert live, parked and idling.
 
 ## Gotchas when debugging on hardware
 
@@ -155,3 +156,7 @@ promote a row to ✅ without actually running it.** As of the last session:
 - Everything user-facing is written for a driver, not an engineer: say what the
   reading means and what to do, not just the number.
 - Thresholds in `sensors.py` are deliberately conservative and vehicle-generic.
+  A car that runs differently gets an entry in `VEHICLE_PROFILES` (selected by
+  `CAR_AI_VEHICLE`, set in `scripts/car-ai.service`), not a retune of the
+  generic values. Override `context` with any threshold: the model reads it.
+  `CAR_AI_VEHICLE=bmw_b46 python app.py ...` to run with it by hand.

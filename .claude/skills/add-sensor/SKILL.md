@@ -51,7 +51,9 @@ it. Write it for a driver, not an engineer.
 **Thresholds are conservative and vehicle-generic.** Omit rather than guess —
 a wrong threshold produces false alarms, and a dashboard that cries wolf gets
 ignored at the moment it matters. `classify()` treats a `None` threshold as
-"never trips".
+"never trips". If *this* car's healthy range differs from generic, add the
+override to `VEHICLE_PROFILES["bmw_b46"]` (threshold **and** `context`) rather
+than bending the generic entry; `--selftest` checks every profile.
 
 **Tier by how fast it actually changes.** Each PID costs ~50–100 ms on an
 ELM327. Only things a driver watches continuously belong in `TIER_PRIMARY`.
