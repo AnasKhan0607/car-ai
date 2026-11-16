@@ -17,6 +17,10 @@ description: Get code changes from a dev machine onto the Raspberry Pi running C
 - Code on the Pi: `~/car-ai` (a plain copy, not a git checkout; see below).
 - venv on the Pi: `~/car_ai_env`.
 - Ollama runs as a systemd service on the Pi with `llama3.2:3b` pulled.
+- Claude Code is installed natively at `~/.local/bin/claude`, logged in to the
+  owner's claude.ai account (`claude auth status`). To log in again, the owner
+  runs `ssh -t pi5.local '~/.local/bin/claude auth login'` in their own
+  terminal. Then `sudo systemctl restart car-ai` to clear the auth backoff.
 
 ## Normal path — through git
 

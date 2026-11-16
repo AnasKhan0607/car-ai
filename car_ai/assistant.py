@@ -212,9 +212,10 @@ never misled."""
 class Assistant:
     """Owns one conversation. Safe to call from a web request thread."""
 
-    def __init__(self, source, model: str = DEFAULT_MODEL):
+    def __init__(self, source, model: str = DEFAULT_MODEL, claude=None):
         self.source = source
         self.model = model
+        self.claude = claude    # brain.ClaudeBrain, or None for local-only
         self.registry, self.schemas = build_registry(source)
         self._lock = threading.Lock()
         self._messages: list[dict[str, Any]] = []
@@ -251,10 +252,58 @@ class Assistant:
                           f"report it over the diagnostic port this system "
                           f"uses. Check the car's own dashboard display, or "
                           f"check it by hand.",
-                "tool_calls": [], "error": None,
+                "tool_calls": [], "error": None, "brain": "rule",
             }
         with self._lock:
-            return self._ask_locked(question)
+            if self.claude is not None:
+                answered = self._ask_claude_locked(question)
+                if answered:
+                    return answered
+            result = self._ask_locked(question)
+            if result.get("error"):
+                # Last resort: no model at all. Readings are still facts.
+                log.warning("no model available: %s", result["error"])
+                summary = readings_summary([{
+                    "tool": "get_all_readings",
+                    "result": dispatch(self.registry, "get_all_readings")}])
+                return {"answer": "I can't reach an AI model right now. "
+                                  + summary, "tool_calls": [], "error": None,
+                        "brain": "none"}
+            result["brain"] = "ollama"
+            return result
+
+    def _ask_claude_locked(self, question: str) -> dict[str, Any] | None:
+        """Claude's answer, or None to fall through to the local model."""
+        trace = [{"tool": "get_all_readings",
+                  "result": dispatch(self.registry, "get_all_readings")}]
+        history = []
+        pending = None
+        for m in self._messages:
+            if m.get("role") == "user":
+                pending = m.get("content")
+            elif m.get("role") == "assistant" and m.get("content") and pending:
+                history.append((pending, m["content"]))
+                pending = None
+        result = self.claude.ask(question, trace[0]["result"], history)
+        if "answer" not in result:
+            return None
+        answer = result["answer"]
+        # Same rule as the local model: a number Claude was not given, or one
+        # given a different unit, means the answer is not trusted.
+        invented = invented_numbers(answer, trace)
+        if invented:
+            log.warning("claude answer had numbers not in the readings %s; "
+                        "replacing it: %r", sorted(invented), answer)
+            answer = readings_summary(trace)
+        # Keep the shared history, so a follow-up that falls back to Ollama
+        # still knows what was asked.
+        self._messages += [{"role": "user", "content": question},
+                           {"role": "assistant", "content": answer}]
+        self._trim()
+        return {"answer": answer, "tool_calls": trace, "error": None,
+                "brain": "claude",
+                **({"replaced_invented_numbers": sorted(invented)}
+                   if invented else {})}
 
     # -- internals -------------------------------------------------------
     def _system_prompt(self) -> str:

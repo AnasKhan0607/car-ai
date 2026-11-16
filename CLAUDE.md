@@ -10,8 +10,11 @@ headless, `claude -p`, on the owner's subscription), with Ollama as the offline
 fallback and a canned reply below that. This replaces the original "no cloud"
 rule with **"must work fully offline"**: cars lose signal exactly where you
 need the answer, so the local path is a first-class path, not a degraded one.
-Claude gets code-written summaries, never the raw telemetry stream. Not built
-yet; it's Phase 2 in `docs/PHASES.md`. Today only the Ollama path exists.
+Claude gets code-written summaries, never the raw telemetry stream. Built in
+#7: `car_ai/brain.py` (Claude, one `claude -p` call per question, 30 s cap,
+backoff per failure kind), then Ollama, then a code-written readings summary.
+`--no-claude` for local only. The answer's `brain` field says which one
+answered, and the chat shows it.
 
 **Terms (checked 2026-11-16, `docs/claude-terms.md`; owner chose the subscription):** the owner using the
 unmodified `claude` binary with their own Pro/Max login, for their own car, is
@@ -84,6 +87,8 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | The model can't be trusted with a number | Seen on the Pi (#6): "50 km/h" parked, "35 kPa" tyre pressure (it was fuel %), rpm reported as km/h. So in code: `not_on_obd()` answers tyre/oil-level/brake questions without the model; `invented_numbers()` checks every number **and its unit** against the tool results and swaps in `readings_summary()` if one is made up; mock answers get the "simulated" label in code. Prompt rules alone did not hold. |
 | Trim never drops the current question | It did, because `get_all_readings` alone exceeded the budget, and the model answered a question nobody asked. That tool now returns a compact form (context only for non-ok readings) plus fault codes and alerts. |
 | `temperature: 0` | Diagnostic read-back, not prose. Set with `num_ctx` in `MODEL_OPTIONS`. |
+| Claude runs from an empty dir, no tools | `claude -p` from `~/car-ai` would load this repo's CLAUDE.md, hooks and skills. Runs from `~/.local/share/car-ai/claude-cwd` with `--tools "" --strict-mcp-config --no-session-persistence` and our own `--system-prompt`. Not `--bare`: that ignores the subscription login. |
+| Remember Claude failures | Backoff by kind (`BACKOFF_S`): auth 10 min, usage limit 30 min, timeout 2 min. In a dead zone the first question waits up to 30 s; later ones go straight to Ollama. Restart the service after logging in to clear an auth backoff. |
 | Fuel level on BMW | PID `012F` is optional and many BMWs don't expose it, but this 430i does (read 40% live). Fuel rate (`015E`) is the one it lacks: permanent `unsupported`. The mock still marks fuel level unsupported deliberately, to exercise that path. |
 | Flask `threaded=True` | A model answer occupies a request for many seconds; the dashboard must keep refreshing. |
 

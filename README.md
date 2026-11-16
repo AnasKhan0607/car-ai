@@ -24,6 +24,7 @@ No cloud. The model, the tools, and the logic all run on the device.
 | HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
 | Drive logging to CSV | ✅ Verified on the Pi |
 | Full LLM chat loop against Ollama | ✅ Runs end-to-end on the Pi, live and simulated; 25–65 s per answer. See note below. |
+| Claude as main brain, Ollama fallback | ✅ On the Pi, parked: 2.5–4 s per answer, all test questions correct; timeout falls back to Ollama. Not yet tested with the hotspot actually offline. |
 | Live OBD-II reads from a real vehicle | ✅ Verified on the 430i (parked, engine idling) |
 | Kiosk mode on the Pi's display, starting on boot | ✅ Verified on the Pi's 7" touchscreen after a cold reboot |
 | Layout on a small (800×480) in-car screen | ⚠️ CSS written; not yet verified on hardware |
