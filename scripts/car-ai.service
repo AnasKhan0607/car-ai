@@ -1,0 +1,25 @@
+# Start Car AI automatically on boot.
+#
+#   sudo cp scripts/car-ai.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now car-ai
+#
+# This starts the SERVER only -- headless, no browser. The dashboard is then at
+# http://<pi>:5000 from any device on the network. To also open Chromium on the
+# Pi's screen at boot, add scripts/kiosk.sh to the desktop autostart instead;
+# a systemd system service has no display to draw on.
+[Unit]
+Description=Car AI OBD-II dashboard and assistant
+After=network.target ollama.service
+Wants=ollama.service
+
+[Service]
+Type=simple
+User=master
+WorkingDirectory=/home/master/car-ai
+ExecStart=/home/master/car_ai_env/bin/python /home/master/car-ai/app.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.11 is what the Pi's Bookworm image ships.
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # Deliberately no `pip install`: --selftest must run with zero
+      # third-party dependencies, and installing them here would hide a
+      # regression that breaks that.
+      - name: Compile
+        run: python -m compileall -q app.py car_ai
+      - name: Self-test (tools, alerts, schemas, mock scenarios)
+        run: python app.py --selftest
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh .claude/hooks/*.sh; do bash -n "$f"; done
