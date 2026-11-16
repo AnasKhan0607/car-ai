@@ -18,6 +18,7 @@ import argparse
 import json
 import logging
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -54,10 +55,11 @@ def parse_args(argv=None) -> argparse.Namespace:
                      help="Seconds between OBD poll cycles (default: 5).")
 
     web = p.add_argument_group("web server")
-    web.add_argument("--host", default="0.0.0.0",
-                     help="Bind address. Default 0.0.0.0 so you can open the "
-                          "dashboard from another machine on the same network; "
-                          "use 127.0.0.1 to restrict it to the Pi.")
+    web.add_argument("--host", default=None,
+                     help="Bind address. Default: every address, IPv6 and "
+                          "IPv4 (falls back to 0.0.0.0 without IPv6), so a "
+                          "phone or laptop on the same network can open the "
+                          "dashboard; use 127.0.0.1 to restrict it to the Pi.")
     web.add_argument("--http-port", type=int, default=5000, help="HTTP port (default: 5000).")
     web.add_argument("--kiosk", action="store_true",
                      help="Launch Chromium fullscreen on the Pi's display.")
@@ -238,8 +240,28 @@ def self_test() -> int:
     name = vehicle_name()
     assert not invented_numbers(f"You're in {name}.", []), name
     print("  Shared system prompt (both brains, same rules): ok")
+
+    assert default_host() in ("::", "0.0.0.0")
+    print(f"  Default bind address: {default_host()}")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
+
+
+def default_host() -> str:
+    """'::' (IPv6 and IPv4) where the machine can bind it, else 0.0.0.0.
+
+    The owner's iPhone hotspot is IPv6-only, so a 0.0.0.0 server was
+    unreachable from a phone or laptop in the car. On Linux with the default
+    net.ipv6.bindv6only=0, '::' also accepts IPv4. Probed rather than assumed,
+    because a box with IPv6 disabled would otherwise fail to start at all.
+    """
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+            s.bind(("::", 0))
+        return "::"
+    except (OSError, AttributeError):
+        return "0.0.0.0"
 
 
 def launch_kiosk(url: str) -> None:
@@ -269,6 +291,7 @@ def main(argv=None) -> int:
 
     if args.selftest:
         return self_test()
+    args.host = args.host or default_host()
 
     source = build_source(mock=args.mock, scenario=args.scenario,
                           interval=args.interval, port=args.serial_port,
@@ -299,8 +322,9 @@ def main(argv=None) -> int:
     if monitor.log_path:
         print(f"  drive log   : {monitor.log_path}")
     print(f"  dashboard   : {url}")
-    if args.host == "0.0.0.0":
-        print(f"                (also reachable on your LAN — use --host 127.0.0.1 to restrict)")
+    if args.host in ("::", "0.0.0.0"):
+        family = "IPv6 + IPv4" if args.host == "::" else "IPv4 only"
+        print(f"                (also on your network, {family} — use --host 127.0.0.1 to restrict)")
     print("=" * 58 + "\n")
 
     if args.kiosk:
