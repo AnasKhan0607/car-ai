@@ -37,6 +37,10 @@ git push -u origin HEAD
 gh pr create --repo AnasKhan0607/car-ai --base main --body "...Closes #12"
 ```
 
+Run `gh pr create` as **its own command**, after the commits. The pre-PR
+hook inspects the branch before the command runs, so a command that commits
+and then opens the PR is judged on the state before that commit.
+
 ## Verification decides "done", not the code
 
 | Change touches | Minimum before the PR |
