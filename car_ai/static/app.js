@@ -143,6 +143,7 @@ function buildGauge(root) {
     // needle through the centre would cut across the big numerals.
     g.needle = el("g", { class: "needle" }, svg);
     el("line", { x1: CX + R - W - 16, y1: CY, x2: CX + R - W / 2 + 2, y2: CY }, g.needle);
+    el("circle", { class: "needle-tip", cx: CX + R, cy: CY, r: 4 }, g.needle);
   }
 
   g.set = (v) => {
@@ -264,6 +265,10 @@ async function refresh() {
     renderAlerts(state);
     renderDTCs(state);
     renderMood(state);
+    // The floor grid in car3d.js moves with real speed only.
+    const speed = state.readings?.speed;
+    window.dispatchEvent(new CustomEvent("car-speed", {
+      detail: speed && speed.value != null && !speed.stale ? speed.value : null }));
   } catch (err) {
     // The server going away should look different from the car going away.
     if (++consecutiveFailures >= 2) {

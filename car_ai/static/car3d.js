@@ -60,6 +60,49 @@ function start() {
   shadow.position.y = 0.01;
   scene.add(shadow);
 
+  // --- glow: everything here takes the mood colour (ok / warn / crit) ---
+  const mood = new THREE.Color(MOOD_COLOURS.ok);
+  const additive = (opts) => new THREE.MeshBasicMaterial({ transparent: true,
+    depthWrite: false, blending: THREE.AdditiveBlending, color: mood, ...opts });
+
+  // Neon ring on the floor, a soft halo inside it, and a scan ring that
+  // sweeps outward every few seconds. Additive sprites, not a bloom pass:
+  // bloom would break the transparent canvas and cost the Pi far more.
+  const glowTex = radialTexture([[0, "rgba(255,255,255,0)"], [0.62, "rgba(255,255,255,0)"],
+    [0.8, "rgba(255,255,255,1)"], [0.86, "rgba(255,255,255,.35)"], [1, "rgba(255,255,255,0)"]]);
+  const haloTex = radialTexture([[0, "rgba(255,255,255,.55)"], [0.5, "rgba(255,255,255,.18)"],
+    [1, "rgba(255,255,255,0)"]]);
+  const floorGroup = new THREE.Group();
+  floorGroup.scale.set(1, 1, 0.55);           // an ellipse under a long car
+  scene.add(floorGroup);
+  const flat = (geo, mat, y) => {
+    const m = new THREE.Mesh(geo, mat); m.rotation.x = -Math.PI / 2; m.position.y = y;
+    floorGroup.add(m); return m;
+  };
+  const halo = flat(new THREE.PlaneGeometry(7.5, 7.5), additive({ map: haloTex, opacity: 0.35 }), 0.005);
+  const ring = flat(new THREE.PlaneGeometry(7.2, 7.2), additive({ map: glowTex, opacity: 0.9 }), 0.012);
+  const scan = flat(new THREE.PlaneGeometry(7.2, 7.2), additive({ map: glowTex, opacity: 0 }), 0.015);
+
+  // Perspective grid that scrolls with the car's real speed: still when
+  // parked, and still when there's no speed reading (no fake motion).
+  // White lines tinted by material colour: GridHelper's own colours are vertex
+  // colours, which would multiply with the tint (cyan x red = black).
+  const grid = new THREE.GridHelper(60, 60, 0xffffff, 0xffffff);
+  grid.material.color.copy(mood);
+  grid.material.transparent = true;
+  grid.material.opacity = 0.16;
+  grid.material.depthWrite = false;
+  grid.position.y = -0.01;
+  scene.add(grid);
+  scene.fog = new THREE.Fog(0x05070b, 9, 26);   // grid fades into the dark
+  let speedKmh = 0;
+  window.addEventListener("car-speed", (e) => { speedKmh = e.detail ?? 0; });
+
+  // Underglow: lights the sills and wheels from below.
+  const under = new THREE.PointLight(mood, 18, 6, 2);
+  under.position.set(0, 0.15, 0);
+  scene.add(under);
+
   const turntable = new THREE.Group();
   scene.add(turntable);
 
@@ -94,7 +137,15 @@ function start() {
     place(gltf.scene);
   }, undefined, () => console.info("car3d: no model at", MODEL_URL, "- using the stand-in"));
 
-  window.addEventListener("car-mood", (e) => rim.color.setHex(MOOD_COLOURS[e.detail] ?? MOOD_COLOURS.ok));
+  function setMood(name) {
+    const hex = MOOD_COLOURS[name] ?? MOOD_COLOURS.ok;
+    rim.color.setHex(hex); under.color.setHex(hex); mood.setHex(hex);
+    // Materials copy a colour when created, so each one is set here.
+    for (const m of [halo.material, ring.material, scan.material, grid.material]) m.color.setHex(hex);
+  }
+  // app.js may have set the mood before this module loaded; start from it.
+  setMood(document.body.dataset.mood);
+  window.addEventListener("car-mood", (e) => setMood(e.detail));
 
   function resize() {
     const w = stage.clientWidth, h = stage.clientHeight;
@@ -116,10 +167,32 @@ function start() {
     last = now;
     if (!visible || now - lastFrame < FRAME_MS) return;
     lastFrame = now;
-    turntable.rotation.y += SPIN_RAD_PER_S * Math.max(dt, FRAME_MS / 1000);
+    const step = Math.max(dt, FRAME_MS / 1000), t = now / 1000;
+    turntable.rotation.y += SPIN_RAD_PER_S * step;
+    // Ring breathes; scan ring sweeps out and fades every 3.5 s.
+    ring.material.opacity = 0.7 + 0.25 * Math.sin(t * 1.6);
+    const s = (t % 3.5) / 3.5;
+    scan.scale.setScalar(0.7 + 0.9 * s);
+    scan.material.opacity = 0.55 * (1 - s) * (1 - s);
+    // 1 grid cell = 1 unit; ~4.6 units is a car length, so map km/h to a
+    // calm on-screen rate rather than true scale.
+    grid.position.z = (grid.position.z + (speedKmh / 3.6) * step * 0.35) % 1;
     renderer.render(scene, camera);
   }
   requestAnimationFrame(frame);
+}
+
+function radialTexture(stops) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d");
+  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+  for (const [at, colour] of stops) grad.addColorStop(at, colour);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
 }
 
 /* A simple white coupe from primitives: the stand-in until (or if) the real

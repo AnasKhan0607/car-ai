@@ -120,7 +120,17 @@ body[data-view="sensors"] .view--sensors { display: block; overflow-y: auto; }
 .cockpit-strip { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 
 .stage { position: relative; height: 100%; min-height: 0; }
-#car-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#car-canvas {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  /* Fade the scene's edges so the grid floor dissolves instead of stopping
+     at the canvas rectangle. */
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent),
+                      linear-gradient(180deg, #000 70%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent),
+              linear-gradient(180deg, #000 70%, transparent);
+  mask-composite: intersect;
+}
 .stage-floor {
   position: absolute; left: 4%; right: 4%; bottom: 12%; height: 24%;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--glow) 55%, transparent),
@@ -279,3 +289,50 @@ body.chat-open .chat { transform: none; }
   .gauge--small .dial { width: 96px; height: 96px; }
   .gauge--small .num { font-size: 2.4rem; }
 }
+
+/* ---------- glow ----------
+   Light is used the same way colour is: it follows status. Normal glows ice
+   blue, warn amber, crit red; no data doesn't glow at all. */
+
+/* accent line under the top bar */
+.topbar { position: relative; }
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glow) 30%, var(--glow) 70%, transparent);
+  box-shadow: 0 0 10px var(--glow), 0 0 22px color-mix(in srgb, var(--glow) 60%, transparent);
+  opacity: .8; transition: background .8s, box-shadow .8s;
+}
+
+/* halo behind the big dials */
+.gauge--big::before {
+  content: ""; position: absolute; inset: 8%; border-radius: 50%; z-index: -1;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--g, var(--accent)) 20%, transparent),
+              color-mix(in srgb, var(--g, var(--accent)) 6%, transparent) 70%, transparent);
+  transition: background .6s;
+}
+.gauge { --g: var(--accent); }
+.gauge[data-status="warn"] { --g: var(--warn); }
+.gauge[data-status="crit"] { --g: var(--crit); }
+.gauge[data-has-value="false"]::before { opacity: 0; }
+
+/* arcs, pointer tip and numerals glow in the gauge's status colour */
+.dial .value { filter: drop-shadow(0 0 4px var(--g)) drop-shadow(0 0 12px color-mix(in srgb, var(--g) 70%, transparent)); }
+.gauge[data-stale="true"] .dial .value { filter: none; }
+.dial .needle-tip { fill: #fff; filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px var(--g)); }
+.gauge .num { text-shadow: 0 0 18px color-mix(in srgb, var(--g) 55%, transparent),
+                            0 0 2px color-mix(in srgb, var(--g) 80%, transparent); }
+.gauge[data-has-value="false"] .num, .gauge[data-stale="true"] .num { text-shadow: none; }
+.dial .tick--major { filter: drop-shadow(0 0 2px rgba(255,255,255,.6)); }
+
+/* glass gauge cards with a lit top edge */
+.gauge--small {
+  background: linear-gradient(180deg, rgba(30,40,58,.75), rgba(12,17,26,.85));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--g) 45%, transparent),
+              0 0 18px color-mix(in srgb, var(--g) 10%, transparent),
+              0 6px 18px rgba(0,0,0,.45);
+  transition: box-shadow .6s, border-color .6s;
+}
+.gauge--small[data-has-value="false"] { box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 6px 18px rgba(0,0,0,.45); }
+
+.brand span, .tab.is-on { transition: box-shadow .6s; }
+.stage-caption { text-shadow: 0 0 10px color-mix(in srgb, var(--glow) 50%, transparent); }
