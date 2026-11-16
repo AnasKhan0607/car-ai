@@ -23,7 +23,7 @@ No cloud. The model, the tools, and the logic all run on the device.
 | Dashboard rendering, live refresh, alert states | ✅ Verified in a browser |
 | HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
 | Drive logging to CSV | ✅ Verified on the Pi |
-| Full LLM chat loop against Ollama | ⚠️ Code complete; **not yet run end-to-end** |
+| Full LLM chat loop against Ollama | ✅ Runs end-to-end on the Pi, live and simulated; 25–65 s per answer. See note below. |
 | Live OBD-II reads from a real vehicle | ✅ Verified on the 430i (parked, engine idling) |
 | Kiosk mode on the Pi's display, starting on boot | ✅ Verified on the Pi's 7" touchscreen after a cold reboot |
 | Layout on a small (800×480) in-car screen | ⚠️ CSS written; not yet verified on hardware |
@@ -36,9 +36,18 @@ escalated to critical ~80s later).
 Live reads were confirmed on the 430i on 2026-11-15, parked with the engine
 idling: the ELM327 negotiated CAN 11-bit/500k, the car reported 111 supported
 PIDs, and every dashboard sensor read except `fuel_rate` (correctly shown as
-unsupported). Readings while actually driving are not yet verified. The LLM
-loop has still not been run against a live Ollama server. Treat the ⚠️ rows as
-unproven.
+unsupported). Readings while actually driving are not yet verified. Treat the
+⚠️ rows as unproven.
+
+The chat loop was first run against Ollama on the Pi on 2026-11-16, in the
+parked car and against the simulator (`scripts/chat_check.py`). The first run
+invented a dirty air filter, low oil and "50 km/h" while parked. After the
+fixes in #6 it uses the right tools, refuses things OBD can't read, labels
+simulated data, and any answer containing a number no tool returned (or a
+real number with the wrong unit) is replaced by a code-written summary.
+Remaining weakness: `llama3.2:3b` can still pin a real reading on the wrong
+sensor (oil temperature called "engine temperature") and is slow (25–65 s).
+That's the case for the Claude brain in Phase 2.
 
 ---
 

@@ -25,15 +25,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from typing import Any
 
+from .sensors import SENSORS_BY_KEY
 from .tools import build_registry, dispatch
 
 log = logging.getLogger("car_ai.assistant")
 
 DEFAULT_MODEL = "llama3.2:3b"
 MAX_TOOL_ROUNDS = 4
+# Temperature 0: this is a diagnostic tool reading numbers back, not a writer.
+# At the default temperature the 3B model, handed speed 0, sometimes said
+# "50 km/h". num_ctx is pinned so the budget below matches the real window.
+MODEL_OPTIONS = {"temperature": 0, "num_ctx": 4096}
 # Rough budget in characters (~4 chars/token) for everything after the system
 # prompt, leaving room in a 4096-token window for the model's own reply.
 HISTORY_CHAR_BUDGET = 7000
@@ -46,6 +52,12 @@ Rules you must follow:
 sensor value you did not read from a tool.
 - If a tool says a sensor is unavailable or unsupported, say plainly that the \
 car does not report it. Never estimate or substitute a number.
+- If no tool covers what the driver asked about (tyre pressure, oil level, \
+brake pads, ...), say this system cannot read it from the car. Do not answer \
+a different question instead.
+- Only mention a problem if a tool reported it (status warn or crit, a fault \
+code, an alert). If every reading is ok, say the car looks healthy. Never \
+invent issues.
 - Each reading comes with its unit and its normal range. Use that range to say \
 clearly whether the value is normal, and explain what it means.
 - Talk like a good mechanic explaining things to a driver who is not technical: \
@@ -54,6 +66,141 @@ concrete, brief, no jargon without a translation.
 what to do about it.
 - Keep answers to a few sentences unless asked for detail. The driver may be \
 reading this at a glance."""
+
+# Things drivers ask about that no OBD-II reading covers. Asked "what's my tyre
+# pressure?", the 3B model grabbed the nearest number and answered "35 kPa,
+# within normal range" -- that was the fuel level. A prompt rule did not stop
+# it, so these are answered in code, before the model is asked.
+NOT_ON_OBD: tuple[tuple[str, re.Pattern], ...] = tuple(
+    (name, re.compile(pattern, re.I)) for name, pattern in (
+        ("tyre pressure", r"\b(tyre|tire)s?\b"),
+        ("oil level", r"\boil\s+(level|amount|quantity)\b|\b(low|enough)\s+oil\b"),
+        ("brake pad wear", r"\bbrake\s*(pad|disc|rotor|fluid)s?\b"),
+        ("coolant level", r"\bcoolant\s+(level|amount)\b|\b(low|enough)\s+coolant\b"),
+        ("washer fluid", r"\bwasher\b|\bwiper\s+fluid\b"),
+    )
+)
+
+
+def not_on_obd(question: str) -> str | None:
+    """Name of the unreadable thing the question asks about, if any."""
+    for name, pattern in NOT_ON_OBD:
+        if pattern.search(question):
+            return name
+    return None
+
+
+# Any number in an answer must have come from a tool result. Even at
+# temperature 0, given speed 0 among twenty ok readings, the model has said
+# "the engine is running at a moderate speed of 78 km/h". A number that appears
+# nowhere in what the tools returned is invented, so the answer is replaced
+# with a summary written by code from the real readings.
+_NUMBER = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?")
+# A number followed by a unit (optionally as a range, "60-115 °C"). Checked as
+# a pair: the model has also said "a moderate speed of 758 km/h" -- 758 was
+# the rpm, so the number alone was real but the claim was invented.
+_UNITS = {
+    "km/h": "km/h", "kph": "km/h", "mph": "mph", "rpm": "rpm",
+    "°c": "c", "c": "c", "degrees": "c", "v": "v", "volts": "v", "volt": "v",
+    "%": "%", "percent": "%", "kpa": "kpa", "bar": "bar", "g/s": "g/s",
+    "km": "km", "l/h": "l/h", "s": "s", "seconds": "s",
+}
+_WITH_UNIT = re.compile(
+    r"(?<![\w.])(-?\d+(?:\.\d+)?)(?:\s*(?:-|to|–)\s*(-?\d+(?:\.\d+)?))?\s*"
+    r"(km/h|kph|mph|rpm|°c|°|degrees|volts?|v|%|percent|kpa|bar|g/s|km|l/h|seconds|s|c)"
+    r"(?![\w/])", re.I)
+
+
+def _numbers(text: str) -> set[float]:
+    return {float(n) for n in _NUMBER.findall(text)}
+
+
+def _pairs(text: str) -> set[tuple[float, str]]:
+    out = set()
+    for lo, hi, unit in _WITH_UNIT.findall(text):
+        u = _UNITS.get(unit.lower(), "c" if unit == "°" else unit.lower())
+        out |= {(round(float(n), 1), u) for n in (lo, hi) if n}
+    return out
+
+
+def _known(trace: list[dict[str, Any]]) -> tuple[set[float], set[tuple[float, str]]]:
+    numbers: set[float] = set()
+    pairs: set[tuple[float, str]] = set()
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            if isinstance(node.get("value"), (int, float)) and node.get("unit"):
+                pairs.update(_pairs(f"{node['value']} {node['unit']}"))
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+        elif isinstance(node, str):
+            pairs.update(_pairs(node))
+
+    for call in trace:
+        walk(call["result"])
+        numbers |= _numbers(json.dumps(call["result"], default=str))
+    numbers = {round(n, 1) for n in numbers} | {float(round(n)) for n in numbers}
+    pairs |= {(float(round(n)), u) for n, u in pairs}
+    return numbers, pairs
+
+
+def invented_numbers(answer: str, trace: list[dict[str, Any]]) -> set[float]:
+    """Numbers in `answer` no tool returned, or returned with another unit."""
+    numbers, pairs = _known(trace)
+    bad = {n for n in _numbers(answer) if round(n, 1) not in numbers}
+    for n, u in _pairs(answer):
+        if (n, u) not in pairs and (float(round(n)), u) not in pairs:
+            bad.add(n)
+    return bad
+
+
+def readings_summary(trace: list[dict[str, Any]]) -> str:
+    """Plain, code-written answer from the readings the tools returned."""
+    lines: list[str] = []
+    for call in trace:
+        result = call["result"]
+        sensors = result.get("readings")
+        if not isinstance(sensors, dict):
+            sensors = {call["tool"]: result} if "value" in result else {}
+        # Glanceable: the primary readings and anything not ok; the rest is
+        # summed up rather than listed (twenty lines is not readable in a car).
+        quiet = 0
+        for key, r in sensors.items():
+            sensor = SENSORS_BY_KEY.get(key)
+            if r.get("status") == "ok" and len(sensors) > 1 and not (sensor and sensor.primary):
+                quiet += 1
+                continue
+            label = r.get("sensor") or (sensor.label if sensor else key.replace("_", " "))
+            flag = "" if r.get("status") == "ok" else f" ({r.get('status')})"
+            lines.append(f"{label}: {r['value']} {r.get('unit', '')}".rstrip() + flag)
+        if quiet:
+            lines.append(f"{quiet} other readings are all normal.")
+        if "codes" in result:
+            codes = result["codes"]
+            lines.append("No stored fault codes." if not codes else
+                         "Fault codes: " + "; ".join(
+                             f"{c['code']} {c['description']}" for c in codes))
+        if result.get("fault_codes"):
+            lines.append("Fault codes: " + "; ".join(result["fault_codes"]))
+        if result.get("active_alerts"):
+            lines.append("Alerts: " + "; ".join(result["active_alerts"]))
+        if "alerts" in result:
+            alerts = result["alerts"]
+            lines.append("No active alerts." if not alerts else
+                         "Alerts: " + "; ".join(a["message"] for a in alerts))
+    if not lines:
+        return ("I couldn't put an answer together from the readings. Try "
+                "asking about one thing, like coolant or battery.")
+    simulated = any(c["result"].get("data_source") == "simulated" for c in trace) or any(
+        r.get("data_source") == "simulated" for c in trace
+        for r in (c["result"].get("readings") or {}).values() if isinstance(r, dict))
+    head = ("SIMULATED data, not a real car. " if simulated else "") + \
+        "Here's what the car is reporting:"
+    return head + "\n" + "\n".join(lines)
+
 
 MOCK_WARNING = """
 
@@ -86,6 +233,26 @@ class Assistant:
 
     def ask(self, question: str) -> dict[str, Any]:
         """Answer one question. Returns {answer, tool_calls, error}."""
+        result = self._answer(question)
+        # MOCK_WARNING asks the model to say the data is simulated; on the Pi it
+        # ignored that in every test answer. The label is the invariant, so
+        # code adds it.
+        answer = result.get("answer")
+        if (answer and self.source.snapshot().mode == "mock"
+                and "simulat" not in answer.lower()):
+            result["answer"] = "(Simulated data, not a real car.) " + answer
+        return result
+
+    def _answer(self, question: str) -> dict[str, Any]:
+        unreadable = not_on_obd(question)
+        if unreadable:
+            return {
+                "answer": f"I can't read your {unreadable}: the car doesn't "
+                          f"report it over the diagnostic port this system "
+                          f"uses. Check the car's own dashboard display, or "
+                          f"check it by hand.",
+                "tool_calls": [], "error": None,
+            }
         with self._lock:
             return self._ask_locked(question)
 
@@ -114,7 +281,7 @@ class Assistant:
 
             try:
                 response = ollama.chat(model=self.model, messages=payload,
-                                       tools=self.schemas)
+                                       tools=self.schemas, options=MODEL_OPTIONS)
             except Exception as exc:
                 log.exception("ollama call failed")
                 self._messages.pop()  # do not poison history with a dead turn
@@ -137,7 +304,16 @@ class Assistant:
                 if not answer:
                     answer = ("I could not put that into words -- try asking "
                               "again, or more specifically.")
-                return {"answer": answer, "tool_calls": trace, "error": None}
+                invented = invented_numbers(answer, trace)
+                if invented:
+                    log.warning("answer had numbers no tool returned %s; "
+                                "replacing it: %r", sorted(invented), answer)
+                    answer = readings_summary(trace)
+                    # Keep the history consistent with what the driver saw.
+                    self._messages[-1]["content"] = answer
+                return {"answer": answer, "tool_calls": trace, "error": None,
+                        **({"replaced_invented_numbers": sorted(invented)}
+                           if invented else {})}
 
             for call in message.tool_calls:
                 name = call.function.name
@@ -170,7 +346,17 @@ class Assistant:
         def size(msgs) -> int:
             return sum(len(str(m.get("content", ""))) for m in msgs)
 
-        while len(self._messages) > 2 and size(self._messages) > HISTORY_CHAR_BUDGET:
+        # Only earlier turns are eligible. The current question and its tool
+        # results stay even if they alone exceed the budget: dropping the
+        # question left the model a page of readings with nothing asked, and
+        # it answered a question nobody asked ("your air filter is dirty").
+        def current_turn_start() -> int:
+            for i in range(len(self._messages) - 1, -1, -1):
+                if self._messages[i].get("role") == "user":
+                    return i
+            return 0
+
+        while current_turn_start() > 0 and size(self._messages) > HISTORY_CHAR_BUDGET:
             self._messages.pop(0)
 
         # Never leave a dangling tool result as the first message: without the
