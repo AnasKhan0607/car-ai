@@ -169,6 +169,46 @@ GENERIC_SENSORS: tuple[Sensor, ...] = (
         decimals=1, tier=TIER_SECONDARY,
         context="Current rate of fuel consumption. Often unsupported.",
     ),
+    # No thresholds on the five below: there's no vehicle-generic line that
+    # means "wrong" for these, and a guessed one would just cry wolf. They're
+    # here for the driver's picture and for the model's diagnosis.
+    Sensor(
+        key="catalyst_temp", command="CATALYST_TEMP_B1S1", label="Catalyst",
+        unit="°C", to_unit="celsius", tier=TIER_SECONDARY,
+        context="Catalytic converter temperature (bank 1, sensor 1). Roughly "
+                "400-800 C once warm, rising with load. Very high readings "
+                "together with a misfire can damage the converter.",
+    ),
+    Sensor(
+        key="fuel_rail_pressure", command="FUEL_RAIL_PRESSURE_DIRECT",
+        label="Fuel Rail", unit="bar", to_unit="bar", tier=TIER_SECONDARY,
+        context="Direct-injection fuel pressure from the high-pressure pump. "
+                "Roughly 50-200 bar on a direct-injected petrol engine: low "
+                "end at idle, rising with load. Pressure that sags under "
+                "load, with stumbling or a fuel fault code, points at the "
+                "high-pressure fuel pump.",
+    ),
+    Sensor(
+        key="barometric_pressure", command="BAROMETRIC_PRESSURE",
+        label="Barometer", unit="kPa", tier=TIER_SLOW,
+        context="Outside air pressure: ~101 kPa at sea level, lower at "
+                "altitude. Intake pressure above this means the turbo is "
+                "making boost.",
+    ),
+    Sensor(
+        key="distance_since_codes_cleared", command="DISTANCE_SINCE_DTC_CLEAR",
+        label="Since Codes Cleared", unit="km", to_unit="km", tier=TIER_SLOW,
+        context="Distance driven since fault codes were last cleared or the "
+                "battery was disconnected. A small number can mean codes were "
+                "cleared recently, which hides past problems.",
+    ),
+    Sensor(
+        key="distance_with_mil", command="DISTANCE_W_MIL",
+        label="Driven w/ Engine Light", unit="km", to_unit="km", tier=TIER_SLOW,
+        context="Distance driven with the check-engine light on. Zero is "
+                "normal; anything more means the light has been on and the "
+                "car was driven anyway.",
+    ),
 )
 
 # ---------------------------------------------------------------------------

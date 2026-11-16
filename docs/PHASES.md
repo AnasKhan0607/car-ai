@@ -33,8 +33,10 @@ right for *this* car before anything is built on top of it.
 - ~~Per-vehicle thresholds~~ (#1): `bmw_b46` profile raises coolant to warn
   115 / crit 120 °C. Oil (~111 °C, warn 125) needed no change; recheck while
   driving (#3).
-- List all 111 supported PIDs and add the useful ones (O2, catalyst temp,
-  barometric pressure, distance since codes cleared, etc.) via `add-sensor`.
+- ~~List the supported PIDs and add the useful ones~~ (#2): the list is in
+  `docs/vehicle-430i-pids.md` (39 live readings, not 111); added catalyst
+  temp, fuel rail pressure, barometer, distance since codes cleared, and
+  distance with the engine light on.
 - Verify live reads **while driving**: speed/RPM respond, no stale tiles,
   measure real poll latency per tier and tune the interval (the spec wants
   1–2 s for the core values; ~50–100 ms per PID makes that feasible only for
