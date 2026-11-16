@@ -17,6 +17,9 @@ Wants=ollama.service
 Type=simple
 User=master
 WorkingDirectory=/home/master/car-ai
+# Vehicle-specific thresholds (car_ai/sensors.py VEHICLE_PROFILES). Remove for
+# generic ones.
+Environment=CAR_AI_VEHICLE=bmw_b46
 ExecStart=/home/master/car_ai_env/bin/python /home/master/car-ai/app.py
 Restart=on-failure
 RestartSec=10

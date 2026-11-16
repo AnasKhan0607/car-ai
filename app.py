@@ -24,6 +24,8 @@ import time
 
 from car_ai.assistant import DEFAULT_MODEL, Assistant
 from car_ai.monitor import Monitor
+from car_ai.sensors import (GENERIC_SENSORS, VEHICLE_PROFILE, VEHICLE_PROFILES,
+                             apply_profile)
 from car_ai.source import MockSource, build_source
 from car_ai.tools import build_registry, dispatch
 
@@ -101,6 +103,22 @@ def self_test() -> int:
     print(f"  {len(alerts)} alert(s) raised by the overheat scenario:")
     for a in alerts:
         print(f"    [{a['severity']}] {a['title']}: {a['message']}")
+
+    # Vehicle profiles are pure data, so check every one regardless of which
+    # (if any) this process loaded: a profile must actually move a threshold,
+    # keep its warn below its crit, and come with its own context text.
+    print("\n  Vehicle profiles:")
+    for name, overrides in sorted(VEHICLE_PROFILES.items()):
+        profiled = {s.key: s for s in apply_profile(GENERIC_SENSORS, name)}
+        for key, fields in overrides.items():
+            s, g = profiled[key], next(x for x in GENERIC_SENSORS if x.key == key)
+            assert "context" in fields, f"{name}/{key}: override context too"
+            for lo, hi in (("warn_high", "crit_high"), ("crit_low", "warn_low")):
+                a, b = getattr(s, lo), getattr(s, hi)
+                assert a is None or b is None or a < b, f"{name}/{key}: {lo} >= {hi}"
+            moved = [f for f in fields if f != "context" and getattr(s, f) != getattr(g, f)]
+            print(f"    {name}: {key} {', '.join(f'{f} {getattr(g, f)}->{getattr(s, f)}' for f in moved)}")
+    print(f"  Loaded profile: {VEHICLE_PROFILE or 'generic'}")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
     return 0
 
@@ -154,6 +172,7 @@ def main(argv=None) -> int:
     print("  CAR AI")
     print("=" * 58)
     print(f"  data source : {'SIMULATED (' + args.scenario + ')' if args.mock else 'live vehicle via ELM327'}")
+    print(f"  vehicle     : {VEHICLE_PROFILE or 'generic thresholds'}")
     print(f"  poll every  : {args.interval:g}s")
     print(f"  model       : {args.model}")
     if monitor.log_path:

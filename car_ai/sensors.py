@@ -13,7 +13,8 @@ its unit and its normal range.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass, field, replace
 
 
 # Poll tiers. The ELM327 is the bottleneck (roughly 50-100 ms per PID), so
@@ -45,8 +46,10 @@ class Sensor:
 # ---------------------------------------------------------------------------
 # Thresholds are deliberately conservative and vehicle-generic. They are a
 # starting point for "something looks off", not a substitute for a mechanic.
+# A car whose normal running differs from generic (see VEHICLE_PROFILES) gets
+# an override rather than a retune here: these numbers are right for most cars.
 # ---------------------------------------------------------------------------
-SENSORS: tuple[Sensor, ...] = (
+GENERIC_SENSORS: tuple[Sensor, ...] = (
     Sensor(
         key="speed", command="SPEED", label="Speed", unit="km/h",
         to_unit="kph", primary=True, tier=TIER_PRIMARY,
@@ -81,9 +84,9 @@ SENSORS: tuple[Sensor, ...] = (
         primary=True, tier=TIER_SECONDARY,
         warn_low=15, crit_low=8,
         context="Fuel remaining as a percentage of tank capacity. NOTE: this "
-                "is an optional OBD-II PID and many vehicles -- BMW in "
-                "particular -- do not expose it. If it reads as unsupported, "
-                "the car genuinely does not provide it.",
+                "is an optional OBD-II PID and many vehicles do not expose "
+                "it. If it reads as unsupported, the car genuinely does not "
+                "provide it.",
     ),
     Sensor(
         key="voltage", command="CONTROL_MODULE_VOLTAGE", label="Battery", unit="V",
@@ -167,6 +170,64 @@ SENSORS: tuple[Sensor, ...] = (
         context="Current rate of fuel consumption. Often unsupported.",
     ),
 )
+
+# ---------------------------------------------------------------------------
+# Vehicle profiles
+# ---------------------------------------------------------------------------
+# Field overrides for engines whose healthy running sits outside the generic
+# bands. Selected by the CAR_AI_VEHICLE environment variable (set in
+# scripts/car-ai.service) and applied here, at import, so the poller, monitor,
+# tools and dashboard can't disagree about the numbers.
+#
+# Override `context` alongside any threshold: the model reads that text, and a
+# threshold that says "fine" next to text that says "pull over" is worse than
+# either alone.
+VEHICLE_PROFILES: dict[str, dict[str, dict]] = {
+    # 2020 BMW 430i (F36), B46 2.0 L turbo. Seen live, parked and idling: coolant
+    # 108-110 C on a healthy warm engine, which the generic warn_high=105 flags
+    # as overheating. BMW's map-controlled thermostat targets up to ~112 C in
+    # economy mode at light load (BMW heat-management docs list 112 C Economy /
+    # 105 Normal / 95 High; documented for the N52, same strategy on the B46).
+    # So warn sits just above the hottest target, crit a few degrees past it.
+    "bmw_b46": {
+        "coolant_temp": dict(
+            warn_high=115, crit_high=120,
+            context="Engine coolant temperature. This BMW engine runs hot on "
+                    "purpose: its map-controlled thermostat holds ~100-112 C "
+                    "at light load to save fuel, and lower (~90-100 C) under "
+                    "hard driving. So 108-112 C at idle or cruising is "
+                    "normal. Above ~115 C is past the hottest target and "
+                    "worth watching; above ~120 C the driver should pull "
+                    "over. Below ~60 C once warmed up suggests a stuck-open "
+                    "thermostat.",
+        ),
+    },
+}
+
+
+def apply_profile(sensors: tuple[Sensor, ...],
+                  profile: str | None) -> tuple[Sensor, ...]:
+    """Return `sensors` with a vehicle profile's overrides applied.
+
+    An unknown profile name raises rather than falling back to generic: a typo
+    in the service file would otherwise silently put back the false alarms the
+    profile exists to remove.
+    """
+    if not profile:
+        return sensors
+    if profile not in VEHICLE_PROFILES:
+        raise ValueError(f"unknown CAR_AI_VEHICLE {profile!r}; choose from "
+                         f"{', '.join(sorted(VEHICLE_PROFILES))} or leave unset")
+    overrides = VEHICLE_PROFILES[profile]
+    unknown = set(overrides) - {s.key for s in sensors}
+    if unknown:
+        raise ValueError(f"profile {profile!r} overrides unknown sensors: "
+                         f"{', '.join(sorted(unknown))}")
+    return tuple(replace(s, **overrides.get(s.key, {})) for s in sensors)
+
+
+VEHICLE_PROFILE: str | None = os.environ.get("CAR_AI_VEHICLE", "").strip() or None
+SENSORS: tuple[Sensor, ...] = apply_profile(GENERIC_SENSORS, VEHICLE_PROFILE)
 
 SENSORS_BY_KEY: dict[str, Sensor] = {s.key: s for s in SENSORS}
 PRIMARY_KEYS: tuple[str, ...] = tuple(s.key for s in SENSORS if s.primary)
