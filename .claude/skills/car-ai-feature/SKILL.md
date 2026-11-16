@@ -26,7 +26,7 @@ source.py   polling thread owns the ELM327, publishes an immutable VehicleState
 | Rule or event | `monitor.py` (thresholds come from `sensors.py`) | Call an AI from the monitor loop |
 | Something derived over time (trips, score, trends) | New module fed by `monitor.on_snapshot` or the log | Re-poll the car for it |
 | AI behaviour (Claude brain, prompts) | Rules in `system_prompt.txt` (both brains); plumbing in `brain.py` / `assistant.py` | Hand the model a raw stream or a bare number; give one brain a rule the other lacks |
-| UI | `static/app.js`, `templates/index.html`, `style.css` | Show a value without its status |
+| UI | `static/app.js` (dials, tiles), `static/car3d.js` (3D car), `templates/index.html`, `style.css` | Show a value without its status; load anything from a CDN |
 
 ## Invariants a feature must keep
 

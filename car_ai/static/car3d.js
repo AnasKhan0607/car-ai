@@ -33,7 +33,7 @@ function start() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 0.85;   // white paint clips above this
 
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
@@ -78,8 +78,18 @@ function start() {
 
   place(standInCar());
   new GLTFLoader().load(MODEL_URL, (gltf) => {
+    // The generated model ships plain PBR textures. Re-wrap them in a
+    // clearcoat material so the white paint catches the studio reflections
+    // like real lacquer does.
     gltf.scene.traverse((o) => {
-      if (o.isMesh && o.material) o.material.envMapIntensity = 1.2;
+      if (!o.isMesh || !o.material) return;
+      const m = o.material;
+      o.material = new THREE.MeshPhysicalMaterial({
+        map: m.map, normalMap: m.normalMap, roughnessMap: m.roughnessMap,
+        metalnessMap: m.metalnessMap, roughness: m.roughness, metalness: m.metalness,
+        clearcoat: 0.8, clearcoatRoughness: 0.12, envMapIntensity: 1.2,
+      });
+      m.dispose();
     });
     place(gltf.scene);
   }, undefined, () => console.info("car3d: no model at", MODEL_URL, "- using the stand-in"));
@@ -92,7 +102,7 @@ function start() {
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     // Keep the whole car in frame on narrow stages (phones, the 7" screen).
-    camera.position.z = 9 * Math.max(1, 1.3 / camera.aspect);
+    camera.position.z = 7.8 * Math.max(1, 1.3 / camera.aspect);
     camera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(stage);
