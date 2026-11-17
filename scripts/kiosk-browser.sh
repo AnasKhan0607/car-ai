@@ -23,5 +23,13 @@ done
 # The car cuts power without a clean shutdown every time, so suppress the
 # "Chromium didn't shut down correctly -- Restore?" bubble that would
 # otherwise sit over the dashboard after every drive.
+#
+# The profile lives in RAM (tmpfs under /run/user): on the SD card Chromium
+# wrote ~1.2 MB a minute of cache and session state, and a profile caught
+# mid-write by a power cut can come back corrupt. Nothing in it needs to
+# survive a reboot -- the dashboard reloads from this Pi.
+PROFILE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/car-ai-kiosk"
+mkdir -p "$PROFILE"
 exec chromium --kiosk --noerrdialogs --disable-infobars \
-  --hide-crash-restore-bubble --ozone-platform=wayland "$URL"
+  --hide-crash-restore-bubble --ozone-platform=wayland \
+  --user-data-dir="$PROFILE" --disk-cache-dir="$PROFILE/cache" "$URL"

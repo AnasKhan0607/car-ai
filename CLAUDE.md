@@ -97,6 +97,7 @@ one dataclass entry — never edit four files. See the `add-sensor` skill.
 | Dials read `sensors.py` | A dial's scale is the sensor's `gauge=(min, max)`; its amber/red zones are the profile-adjusted thresholds. A reading with no value draws an empty dial, never one at zero. |
 | `car.glb` is CC BY-SA | Generated with Hyper3D Rodin from two CC BY-SA 3.0 DE Commons photos; credits in `static/models/CREDITS.md`. Replacing it means updating that file. |
 | Bind `::`, not `0.0.0.0` | The iPhone hotspot is IPv6-only; an IPv4-only server can't be opened from a phone in the car. `default_host()` probes for IPv6 and falls back to `0.0.0.0`. `--host 127.0.0.1` still restricts to the Pi. |
+| Keep SD writes near zero | The car pulls power mid-write every drive. `scripts/pi-harden.sh` (#32) puts journald in RAM, masks PackageKit and the apt timers, and stops the unused containers; `kiosk-browser.sh` keeps Chromium's profile in tmpfs. Idle 780 → ~136 KiB/min; first boot minute ~122 MB → ~10.6 MB. So `journalctl` starts empty after every boot, and updates are manual. |
 
 ## Commands
 

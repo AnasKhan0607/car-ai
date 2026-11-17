@@ -80,6 +80,19 @@ To run `app.py` by hand (e.g. `--mock`), `sudo systemctl stop car-ai` first:
 two instances fight over the adapter. Changing `scripts/car-ai.service`
 needs `sudo cp` to `/etc/systemd/system/` and `daemon-reload`.
 
+## Hardening (run once, re-run after reinstalling the OS)
+
+```bash
+sudo ./scripts/pi-harden.sh
+```
+
+Cuts SD writes so a power cut has less to corrupt: journald in RAM (so
+`journalctl` forgets across reboots; that's the point), PackageKit masked and
+apt timers off (update by hand: `sudo apt update && sudo apt full-upgrade`),
+Home Assistant / MediaMTX containers stopped with `restart=no`,
+`fsck.repair=yes`. Each step prints its undo. The kiosk's Chromium profile
+lives in `/run/user/$UID` via `kiosk-browser.sh`, so it is wiped every boot.
+
 Note: `~/car-ai` on the Pi is **not a git checkout** (it was unpacked from a
 tarball), so the "through git" path above needs a fresh clone first. Until
 then, use the tar-over-ssh path.

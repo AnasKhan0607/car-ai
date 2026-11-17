@@ -77,6 +77,10 @@ The car cuts power with no shutdown every time it is switched off.
 
 - ~~Move the drive log from CSV to SQLite in WAL mode~~ (#31): one
   transaction per poll, `synchronous=FULL`; survives `kill -9` in the self-test.
+- ~~Cut background SD writes~~ (#32, `scripts/pi-harden.sh`): journald in RAM,
+  no PackageKit or apt timers, the kiosk's Chromium profile in tmpfs, unused
+  containers off. Measured: idle 780 → ~136 KiB/min, first minute after boot
+  ~122 MB → ~10.6 MB.
 - Writable data partition (or USB stick) for logs and the database.
 - Overlay (read-only) root filesystem. Design the deploy path first: with the
   overlay on, `git pull` on the Pi no longer persists.
