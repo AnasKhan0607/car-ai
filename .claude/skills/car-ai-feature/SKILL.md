@@ -13,7 +13,7 @@ Start from an issue (`project-management`). For a new vehicle value, use
 ```
 source.py   polling thread owns the ELM327, publishes an immutable VehicleState
    │        (LiveOBDSource / MockSource; build_source() picks one)
-   ├──► monitor.py   on_snapshot(): thresholds → Alerts, debounce, CSV log
+   ├──► monitor.py   on_snapshot(): thresholds → Alerts, debounce, drive log (drivelog.py)
    ├──► tools.py     build_registry(): zero-arg tools reading source.snapshot()
    │        └──► assistant.py  Ollama loop, SYSTEM_PROMPT, MAX_TOOL_ROUNDS
    └──► server.py    Flask: /api/state, /api/alerts/history, /api/chat(/reset)

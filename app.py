@@ -73,7 +73,7 @@ def parse_args(argv=None) -> argparse.Namespace:
                          "installed and logged in.")
 
     p.add_argument("--no-log", action="store_true",
-                   help="Do not write a CSV drive log.")
+                   help="Do not write the drive log (~/car_ai_logs/drives.db).")
     p.add_argument("--log-dir", default=None, help="Where to write drive logs.")
     p.add_argument("--selftest", action="store_true",
                    help="Exercise the tool layer against the simulator and exit. "
@@ -241,6 +241,47 @@ def self_test() -> int:
     assert not invented_numbers(f"You're in {name}.", []), name
     print("  Shared system prompt (both brains, same rules): ok")
 
+    # Drive log: every poll lands in SQLite with its mode, alerts become
+    # events, and a process killed mid-write (what a power cut looks like to
+    # SQLite) leaves a database that opens clean with everything committed.
+    import sqlite3
+    import subprocess
+    from car_ai.drivelog import DriveLog, integrity_ok
+    with tempfile.TemporaryDirectory() as tmp:
+        db = os.path.join(tmp, "drives.db")
+        dl = DriveLog(db, mode="mock")
+        m = Monitor(enable_logging=False)
+        m._drivelog = dl
+        for _ in range(3):
+            source._poll_cycle()
+            m.on_snapshot(source.snapshot())
+        dl.close()
+        con = sqlite3.connect(db)
+        modes = con.execute("SELECT mode FROM drives").fetchall()
+        n_readings = con.execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+        n_alerts = con.execute("SELECT COUNT(*) FROM events WHERE kind='alert'").fetchone()[0]
+        con.close()
+        assert modes == [("mock",)] and n_readings > 0 and n_alerts > 0, (modes, n_readings, n_alerts)
+
+        crash_db = os.path.join(tmp, "crash.db")
+        writer = subprocess.Popen([sys.executable, "-c", (
+            "import sys; sys.path.insert(0, %r)\n"
+            "from car_ai.drivelog import DriveLog\n"
+            "from car_ai.source import MockSource\n"
+            "s = MockSource(interval=0); s._connect(); d = DriveLog(%r, mode='mock')\n"
+            "while True:\n    s._poll_cycle(); d.record(s.snapshot())\n"
+        ) % (os.path.dirname(os.path.abspath(__file__)), crash_db)])
+        time.sleep(1.5)
+        writer.kill()                       # SIGKILL: no cleanup, mid-transaction
+        writer.wait()
+        assert integrity_ok(crash_db), "drive log corrupt after kill -9"
+        con = sqlite3.connect(crash_db)
+        survived = con.execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+        con.close()
+        assert survived > 0, "nothing survived the kill"
+    print(f"  Drive log (SQLite WAL): {n_readings} readings, {n_alerts} alert events; "
+          f"after kill -9: intact, {survived} readings kept")
+
     assert default_host() in ("::", "0.0.0.0")
     print(f"  Default bind address: {default_host()}")
     print("\nSelf-test complete — tool layer, alerting and schemas all OK.")
@@ -296,7 +337,8 @@ def main(argv=None) -> int:
     source = build_source(mock=args.mock, scenario=args.scenario,
                           interval=args.interval, port=args.serial_port,
                           baudrate=args.baudrate)
-    monitor = Monitor(log_dir=args.log_dir, enable_logging=not args.no_log)
+    monitor = Monitor(log_dir=args.log_dir, enable_logging=not args.no_log,
+                      mode="mock" if args.mock else "live")
     # The tool layer reaches the monitor through the source, so the assistant
     # can answer "is anything wrong?" from the same alerts shown on screen.
     source.monitor = monitor

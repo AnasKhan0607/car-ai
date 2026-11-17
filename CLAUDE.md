@@ -55,7 +55,7 @@ ELM327 (USB) ──► polling thread (owns the serial port, 5s)
          ┌───────────────┼────────────────┐
          ▼               ▼                ▼
      dashboard        monitor         LLM tools
-     (browser)     alerts + CSV     (llama3.2:3b)
+     (browser)   alerts + SQLite   (Claude / llama3.2:3b)
 ```
 
 - **One thread owns the connection.** An ELM327 serves one request at a time
@@ -121,7 +121,7 @@ promote a row to ✅ without actually running it.** As of the last session:
 
 - ✅ Verified: tool layer, alert engine (incl. debounce + escalation, confirmed
   on the Pi), mock scenarios, dashboard rendering and alert states, HTTP API,
-  CSV logging, **live reads from the 430i** (2026-11-15, parked and idling:
+  drive logging (SQLite since #31), **live reads from the 430i** (2026-11-15, parked and idling:
   CH340 ELM327 at `/dev/ttyUSB0`, CAN 11/500, 111 PIDs).
 - ✅ Chat loop end-to-end on the Pi (2026-11-16, #6), with the guards in the
   constraints table. `llama3.2:3b` is still slow (25–65 s) and sometimes

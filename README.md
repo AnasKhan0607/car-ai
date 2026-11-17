@@ -22,7 +22,7 @@ No cloud. The model, the tools, and the logic all run on the device.
 | Simulated vehicle with fault scenarios (`--mock`) | ✅ Verified end-to-end |
 | Dashboard rendering, live refresh, alert states | ✅ Verified in a browser |
 | HTTP API (`/api/state`, `/api/chat`) | ✅ Verified end-to-end |
-| Drive logging to CSV | ✅ Verified on the Pi |
+| Drive logging (SQLite, WAL) | ✅ Self-test incl. `kill -9` mid-write; power-cut test on the Pi is #33 |
 | Full LLM chat loop against Ollama | ✅ Runs end-to-end on the Pi, live and simulated; 25–65 s per answer. See note below. |
 | Claude as main brain, Ollama fallback | ✅ On the Pi, parked: 2.5–4 s per answer, all test questions correct; timeout falls back to Ollama. Not yet tested with the hotspot actually offline. |
 | Live OBD-II reads from a real vehicle | ✅ Verified on the 430i (parked, engine idling) |
@@ -95,7 +95,7 @@ the unsupported-sensor path is exercised during development.
      ┌───────┴────────┬──────────────────┐
      ▼                ▼                  ▼
   dashboard        monitor          LLM tools
-  (browser)     alerts + CSV     (llama3.2:3b)
+  (browser)   alerts + SQLite   (Claude / llama3.2:3b)
 ```
 
 **One thread owns the connection.** An ELM327 serves one request at a time and
@@ -206,7 +206,12 @@ up over ten minutes is exactly what a driver will not think to ask about.
 - A **new** fault code alerts immediately — the ECU has already debounced it.
 - Losing the adapter is itself an alert, so a dropped connection never looks
   like a screen full of healthy frozen numbers.
-- Every cycle is appended to `~/car_ai_logs/drive_<timestamp>.csv`.
+- Every poll is written to `~/car_ai_logs/drives.db` (SQLite, WAL mode,
+  `synchronous=FULL`): one transaction per poll, so a power cut loses at most
+  the poll in flight and never corrupts the file. Tables: `drives` (one per
+  start, with `mode` live/mock), `readings` (one row per sensor read, with its
+  real read time), `events` (alerts as they fire, fault-code changes).
+  Older drives from before #31 are still in `drive_<timestamp>.csv`.
 
 ---
 
@@ -236,7 +241,8 @@ If it does, `clear` in the chat panel starts fresh.
 app.py                  entry point, CLI, self-test
 car_ai/sensors.py       the sensor catalogue — one source of truth
 car_ai/source.py        connection + polling thread; live and mock sources
-car_ai/monitor.py       alert evaluation and CSV drive logging
+car_ai/monitor.py       alert evaluation (debounce, escalation)
+car_ai/drivelog.py      crash-safe SQLite drive log
 car_ai/tools.py         tool schemas and dispatcher for the LLM
 car_ai/assistant.py     the Ollama chat loop
 car_ai/server.py        Flask routes
